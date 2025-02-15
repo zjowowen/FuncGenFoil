@@ -17,7 +17,7 @@ English | [简体中文(Simplified Chinese)](https://github.com/zjowowen/FuncGen
 ## Framework Structure
 
 <p align="center">
-  <img src="assets/airfoil_generation.png" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_generation.pdf" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
 </p>
 
 ## Installation

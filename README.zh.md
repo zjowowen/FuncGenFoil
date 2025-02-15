@@ -17,7 +17,7 @@
 ## 框架结构
 
 <p align="center">
-  <img src="assets/airfoil_generation.png" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_generation.pdf" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
 </p>
 
 ## 安装

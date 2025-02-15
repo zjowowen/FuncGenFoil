@@ -9,15 +9,21 @@
 
 ## 大纲
 
-- [框架结构](#框架结构)
+- [框架](#框架)
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [开源协议](#开源协议)
 
 ## 框架结构
 
+在函数空间中训练和推理翼型生成模型的演示。
 <p align="center">
   <img src="assets/airfoil_generation.png" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
+</p>
+
+在函数空间中训练和推理翼型编辑模型的演示。
+<p align="center">
+  <img src="assets/airfoil_editing.png" alt="Image Description 2" width="80%" height="auto" style="margin: 0 1%;">
 </p>
 
 ## 安装

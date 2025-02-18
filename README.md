@@ -1,5 +1,6 @@
 # FuncGenFoil: Airfoil Generation and Editing Model in Function Space
     
+[![FuncGenFoil Preprint](http://img.shields.io/badge/paper-arxiv.2502.10712-B31B1B.svg)](https://arxiv.org/abs/2502.10712)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 English | [简体中文(Simplified Chinese)](https://github.com/zjowowen/FuncGenFoil/blob/main/README.zh.md)

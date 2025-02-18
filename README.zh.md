@@ -1,5 +1,6 @@
 # 在函数空间中生成和编辑翼型
 
+[![FuncGenFoil Preprint](http://img.shields.io/badge/paper-arxiv.2502.10712-B31B1B.svg)](https://arxiv.org/abs/2502.10712)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 [英语 (English)](https://github.com/zjowowen/FuncGenFoil/blob/main/README.md) | 简体中文

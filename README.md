@@ -13,6 +13,7 @@ English | [简体中文(Simplified Chinese)](https://github.com/zjowowen/FuncGen
 - [Framework](#framework)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Citation](#citation)
 - [License](#license)
 
 ## Framework
@@ -61,6 +62,22 @@ python train_airfoil_editing.py
 To evaluate the model for airfoil generation with super-resolution:
 ```bash
 python eval_airfoil_generation_super_resolution.py
+```
+
+## Citation
+
+If you find this work useful, please consider citing:
+
+```latex
+@misc{zhang2025funcgenfoilairfoilgenerationediting,
+      title={FuncGenFoil: Airfoil Generation and Editing Model in Function Space}, 
+      author={Jinouwen Zhang and Junjie Ren and Aobo Yang and Yan Lu and Lu Chen and Hairun Xie and Jing Wang and Miao Zhang and Wanli Ouyang and Shixiang Tang},
+      year={2025},
+      eprint={2502.10712},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2502.10712}, 
+}
 ```
 
 ## License

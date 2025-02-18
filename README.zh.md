@@ -13,6 +13,7 @@
 - [框架](#框架)
 - [安装](#安装)
 - [快速开始](#快速开始)
+- [引用](#引用)
 - [开源协议](#开源协议)
 
 ## 框架结构
@@ -61,6 +62,22 @@ python train_airfoil_editing.py
 评估用于翼型生成模型在超分辨率下的表现：
 ```bash
 python eval_airfoil_generation_super_resolution.py
+```
+
+## 引用
+
+如果 FuncGenFoil 对您的研究有所帮助，请引用以下论文：
+
+```latex
+@misc{zhang2025funcgenfoilairfoilgenerationediting,
+      title={FuncGenFoil: Airfoil Generation and Editing Model in Function Space}, 
+      author={Jinouwen Zhang and Junjie Ren and Aobo Yang and Yan Lu and Lu Chen and Hairun Xie and Jing Wang and Miao Zhang and Wanli Ouyang and Shixiang Tang},
+      year={2025},
+      eprint={2502.10712},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2502.10712}, 
+}
 ```
 
 ## 开源协议

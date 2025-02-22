@@ -10,11 +10,13 @@ English | [简体中文(Simplified Chinese)](https://github.com/zjowowen/FuncGen
 
 ## Outline
 
-- [Framework](#framework)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Citation](#citation)
-- [License](#license)
+- [FuncGenFoil: Airfoil Generation and Editing Model in Function Space](#funcgenfoil-airfoil-generation-and-editing-model-in-function-space)
+  - [Outline](#outline)
+  - [Framework](#framework)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Citation](#citation)
+  - [License](#license)
 
 ## Framework
 
@@ -46,22 +48,22 @@ Download dataset from [here](https://drive.google.com/drive/folders/1LU6p-TeWpH5
 
 To train the model without conditional information:
 ```bash
-python train_unconditional_airfoil_generation.py
+python examples/train_unconditional_airfoil_generation.py
 ```
 
 To train the model with conditional information:
 ```bash
-python train_conditional_airfoil_generation.py
+python examples/train_conditional_airfoil_generation.py
 ```
 
 To train the model for airfoil editing:
 ```bash
-python train_airfoil_editing.py
+python examples/train_airfoil_editing.py
 ```
 
 To evaluate the model for airfoil generation with super-resolution:
 ```bash
-python eval_airfoil_generation_super_resolution.py
+python examples/eval_airfoil_generation_super_resolution.py
 ```
 
 ## Citation

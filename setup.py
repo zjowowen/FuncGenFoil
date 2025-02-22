@@ -37,6 +37,7 @@ setup(
         'av',
         'moviepy',
         'imageio[ffmpeg]',
+        'neuraloperater',
     ],
     dependency_links=[
         'git+https://github.com/zjowowen/GenerativeRL_Preview.git#egg=GenerativeRL',

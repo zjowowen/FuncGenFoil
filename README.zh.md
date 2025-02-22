@@ -10,11 +10,13 @@
 
 ## 大纲
 
-- [框架](#框架)
-- [安装](#安装)
-- [快速开始](#快速开始)
-- [引用](#引用)
-- [开源协议](#开源协议)
+- [在函数空间中生成和编辑翼型](#在函数空间中生成和编辑翼型)
+  - [大纲](#大纲)
+  - [框架结构](#框架结构)
+  - [安装](#安装)
+  - [快速开始](#快速开始)
+  - [引用](#引用)
+  - [开源协议](#开源协议)
 
 ## 框架结构
 
@@ -46,22 +48,22 @@ pip install -e .
 
 训练不带条件信息的模型：
 ```bash
-python train_unconditional_airfoil_generation.py
+python examples/train_unconditional_airfoil_generation.py
 ```
 
 训练带条件信息的模型：
 ```bash
-python train_conditional_airfoil_generation.py
+python examples/train_conditional_airfoil_generation.py
 ```
 
 训练用于翼型编辑的模型：
 ```bash
-python train_airfoil_editing.py
+python examples/train_airfoil_editing.py
 ```
 
 评估用于翼型生成模型在超分辨率下的表现：
 ```bash
-python eval_airfoil_generation_super_resolution.py
+python examples/eval_airfoil_generation_super_resolution.py
 ```
 
 ## 引用

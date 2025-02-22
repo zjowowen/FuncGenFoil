@@ -166,3 +166,6 @@ wandb/
 *.npy
 *.png
 *.npz
+
+output/
+data/

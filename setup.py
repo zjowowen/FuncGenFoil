@@ -17,6 +17,7 @@ setup(
     install_requires=[
         'h5py',
         'timm',
+        'neuraloperator',
         'numpy<=1.26.4',
         'torch>=2.2.0',
         'opencv-python',
@@ -43,6 +44,9 @@ setup(
         'git+https://github.com/rtqichen/torchdiffeq.git#egg=torchdiffeq',
     ],
     extras_require={
+        'accelerator': [
+            'accelerator',
+        ],
         'HuggingFace': [
             'safetensors',
             'huggingface_hub',

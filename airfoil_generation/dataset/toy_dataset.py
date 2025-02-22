@@ -255,11 +255,18 @@ class MaternGaussianProcess(torch.distributions.distribution.Distribution):
         Overview:
             Calculate the likelihood of the input.
         Arguments:
+            - dims (list): list of dimensions for the grid
             - x (tensor): input to calculate the likelihood for, shape (n_batch, n_channels, ...)
         Returns:
             - logp (tensor): log likelihood of the input
         """
 
         x = torch.flatten(x, start_dim=1)
-        logp = self.base_dist.log_prob(x)
+
+        if self.base_dist.loc.shape == x.shape[1:]:
+            distr = self.base_dist
+        else:
+            distr = self.new_dist(x.shape[1:])
+
+        logp = distr.log_prob(x)
         return logp

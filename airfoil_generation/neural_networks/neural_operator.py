@@ -90,6 +90,7 @@ class FourierNeuralOperator(torch.nn.Module):
         proj_channels: int,
         x_dim: int = 1,
         t_scaling: float = 1,
+        n_layers: int = 4,
     ):
         """
         Overview:
@@ -116,6 +117,7 @@ class FourierNeuralOperator(torch.nn.Module):
             projection_channels=proj_channels,
             in_channels=in_channels,
             out_channels=vis_channels,
+            n_layers=n_layers,
         )
 
     def forward(self, t, x, condition=None):
@@ -153,6 +155,57 @@ class FourierNeuralOperator(torch.nn.Module):
             u = torch.cat((u, posn_emb, t, condition), dim=1).float()
         else:
             u = torch.cat((u, posn_emb, t), dim=1).float()  # todo fix precision
+
+        out = self.model(u)
+
+        return out
+
+class FourierNeuralOperatorConditional(torch.nn.Module):
+    def __init__(
+        self, modes, vis_channels, hidden_channels, proj_channels, n_layers=4, x_dim=1, t_scaling=1
+    ):
+        super().__init__()
+
+        self.t_scaling = t_scaling
+        n_modes = (modes,) * x_dim  # Same number of modes in each x dimension
+        in_channels = (
+            vis_channels + x_dim + 1 + 11
+        )  # visual channels + spatial embedding + time embedding
+
+        self.model = FNO(
+            n_modes=n_modes,
+            hidden_channels=hidden_channels,
+            projection_channels=proj_channels,
+            in_channels=in_channels,
+            out_channels=vis_channels,
+            n_layers=n_layers,
+        )
+
+    def forward(self, t, x, condition=None):
+        u = x
+        # u: (batch_size, channels, h, w)
+        # t: either scalar or (batch_size,)
+
+        t = t / self.t_scaling
+        # print("t in the model:{}".format(t))
+        batch_size = u.shape[0]
+        dims = u.shape[2:]
+
+        if t.dim() == 0 or t.numel() == 1:
+            t = torch.ones(u.shape[0], device=t.device) * t
+
+        assert t.dim() == 1
+        assert t.shape[0] == u.shape[0]
+
+        # Concatenate time as a new channel
+        t = t_allhot(t, u.shape)
+        # print('t max:{}, t min:{}'.format(t.max(), t.min()))
+        # Concatenate position as new channel(s)
+        posn_emb = make_posn_embed(batch_size, dims).to(u.device)
+
+        condition = condition.unsqueeze(2).expand(-1, -1, u.shape[2])  # 扩展成 (B, 11, 257)
+
+        u = torch.cat((u, posn_emb, t, condition), dim=1).float()  # TODO fix precision
 
         out = self.model(u)
 

@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from easydict import EasyDict
 
-from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
+from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator, FourierNeuralOperatorConditional
 
 
 def register_module(module: nn.Module, name: str):
@@ -30,4 +30,5 @@ def get_module(type: str):
 
 MODULES = {
     "FourierNeuralOperator".lower(): FourierNeuralOperator,
+    "FourierNeuralOperatorConditional".lower(): FourierNeuralOperatorConditional,
 }

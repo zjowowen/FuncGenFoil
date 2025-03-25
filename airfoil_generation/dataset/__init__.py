@@ -40,7 +40,7 @@ class Dataset(torch.utils.data.Dataset):
     ):
         for dataset_name in dataset_names:
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_parsec_params_11.txt"
+                f"{folder_path}/{dataset_name}/{dataset_name}_parsec_params.txt"
             ) as f:
                 for line in f.readlines():
                     name_params = line.strip().split(",")

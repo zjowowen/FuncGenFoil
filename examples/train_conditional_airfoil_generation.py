@@ -227,7 +227,7 @@ def main(args):
     mp_list = []
 
     for iteration in track(
-        range(config.parameter.iterations),
+        range(1, config.parameter.iterations + 1),
         description="Training",
         disable=not accelerator.is_local_main_process,
     ):

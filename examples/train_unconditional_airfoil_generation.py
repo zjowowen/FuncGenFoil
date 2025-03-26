@@ -100,7 +100,7 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    project_name = "airfoil-generation"
+    project_name = "airfoil-generation-unconditional"
     config = EasyDict(
         dict(
             device=device,
@@ -222,7 +222,7 @@ def main(args):
 
     iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
 
-    accelerator.init_trackers("airfoil-generation", config=None)
+    accelerator.init_trackers("airfoil-generation-unconditioanl", config=None)
     accelerator.print("✨ Start training ...")
 
     mp_list = []

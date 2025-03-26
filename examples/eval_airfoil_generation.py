@@ -207,7 +207,7 @@ def main(args):
                     type="velocity_function",
                     args=dict(
                         backbone=dict(
-                            type="FourierNeuralOperatorConditional",
+                            type="FourierNeuralOperator",
                             args=dict(
                                 modes=48,
                                 vis_channels=1,
@@ -216,6 +216,7 @@ def main(args):
                                 x_dim=1,
                                 t_scaling=1,
                                 n_layers=4,
+                                n_conditions=15,
                             ),
                         ),
                     ),

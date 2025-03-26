@@ -91,7 +91,7 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    project_name = "airfoil-generation"
+    project_name = "airfoil-generation-conditional"
     config = EasyDict(
         dict(
             device=device,
@@ -116,7 +116,7 @@ def main(args):
                     type="velocity_function",
                     args=dict(
                         backbone=dict(
-                            type="FourierNeuralOperatorConditional",
+                            type="FourierNeuralOperator",
                             args=dict(
                                 modes=64,
                                 vis_channels=1,
@@ -125,6 +125,7 @@ def main(args):
                                 x_dim=1,
                                 t_scaling=1,
                                 n_layers=6,
+                                n_conditions=15,
                             ),
                         ),
                     ),
@@ -220,13 +221,13 @@ def main(args):
 
     iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
 
-    accelerator.init_trackers("airfoil-generation", config=None)
+    accelerator.init_trackers("airfoil-generation-conditional", config=None)
     accelerator.print("✨ Start training ...")
 
     mp_list = []
 
     for iteration in track(
-        range(config.parameter.iterations),
+        range(1, config.parameter.iterations + 1),
         description="Training",
         disable=not accelerator.is_local_main_process,
     ):

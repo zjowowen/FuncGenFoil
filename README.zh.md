@@ -66,6 +66,12 @@ python examples/train_airfoil_editing.py
 python examples/eval_airfoil_generation_super_resolution.py
 ```
 
+使用 Gradio 评估翼型生成与编辑：
+```bash
+pip install gradio
+python app.py
+```
+
 ## 引用
 
 如果 FuncGenFoil 对您的研究有所帮助，请引用以下论文：

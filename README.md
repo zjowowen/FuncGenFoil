@@ -66,6 +66,12 @@ To evaluate the model for airfoil generation with super-resolution:
 python examples/eval_airfoil_generation_super_resolution.py
 ```
 
+To evaluate airfoil generation and editing using Gradio:
+```bash
+pip install gradio
+python app.py
+```
+
 ## Citation
 
 If you find this work useful, please consider citing:

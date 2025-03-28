@@ -169,3 +169,7 @@ wandb/
 
 output/
 data/
+
+*.pth
+*.safetensors
+

@@ -195,11 +195,32 @@ def main(args):
         AF200KDataset(split="test")
     )
 
+    # # save train_dataset_min and train_dataset_max using safetensors
+    # from safetensors.torch import save_file
+    # # Create a dictionary
+    # tensors_to_save = {
+    #     "train_dataset_min": train_dataset.min,
+    #     "train_dataset_max": train_dataset.max,
+    # }
+
+    # # Save using safetensors
+    # save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
+
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(torch.isnan(train_dataset_std) | torch.isinf(train_dataset_std), torch.tensor(0.0), train_dataset_std)
     train_dataset_std = train_dataset_std.to(device)
     train_dataset_mean = train_dataset_mean.to(device)
+
+    # # save train_dataset_mean and train_dataset_std using torch.save
+    # stats = {
+    #     "mean": train_dataset_mean,
+    #     "std": train_dataset_std,
+    # }
+    # torch.save(stats, f"output/{project_name}/mean_std.pt")
+    # # load train_dataset_min and train_dataset_max using safetensors
+    # stats = torch.load('mean_std.pt')
+    # train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
 
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()

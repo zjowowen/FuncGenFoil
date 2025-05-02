@@ -5,9 +5,6 @@ import h5py
 import numpy as np
 import torch
 
-import numpy as np
-import torch
-
 from tensordict import TensorDict
 from torchrl.data import LazyTensorStorage, LazyMemmapStorage
 

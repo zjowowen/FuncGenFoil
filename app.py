@@ -3,9 +3,11 @@ import plotly.graph_objects as go
 import json
 import os
 import matplotlib
+
 matplotlib.use("Agg")
 import numpy as np
 import torch
+import random
 from easydict import EasyDict
 from safetensors.torch import load_file
 import copy
@@ -17,6 +19,8 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.utils import find_parameters
 from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil
+from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
 
 def render_fig(
@@ -81,14 +85,23 @@ def render_fig(
 
     return fig, xs, ys
 
-def init_unconditional_flow_model(config, device):
-    flow_model = OptimalTransportFunctionalFlow(config=config.unconditional_flow_model).to(device)
 
-    assert os.path.exists(config.parameter.unconditional_model_load_path) and os.path.isfile(
+def init_unconditional_flow_model(config, device):
+    flow_model = OptimalTransportFunctionalFlow(
+        config=config.unconditional_flow_model
+    ).to(device)
+
+    assert os.path.exists(
+        config.parameter.unconditional_model_load_path
+    ) and os.path.isfile(
         config.parameter.unconditional_model_load_path
     ), f"Model file not found at {config.parameter.unconditional_model_load_path}"
     # pop out _metadata key
-    state_dict = torch.load(config.parameter.unconditional_model_load_path, map_location="cpu", weights_only=False)
+    state_dict = torch.load(
+        config.parameter.unconditional_model_load_path,
+        map_location="cpu",
+        weights_only=False,
+    )
     state_dict.pop("_metadata", None)
 
     # Create a new dictionary with updated keys
@@ -108,14 +121,23 @@ def init_unconditional_flow_model(config, device):
 
     return flow_model
 
-def init_conditional_flow_model(config, device):
-    flow_model = OptimalTransportFunctionalFlow(config=config.conditional_flow_model).to(device)
 
-    assert os.path.exists(config.parameter.conditional_model_load_path) and os.path.isfile(
+def init_conditional_flow_model(config, device):
+    flow_model = OptimalTransportFunctionalFlow(
+        config=config.conditional_flow_model
+    ).to(device)
+
+    assert os.path.exists(
+        config.parameter.conditional_model_load_path
+    ) and os.path.isfile(
         config.parameter.conditional_model_load_path
     ), f"Model file not found at {config.parameter.conditional_model_load_path}"
     # pop out _metadata key
-    state_dict = torch.load(config.parameter.conditional_model_load_path, map_location="cpu", weights_only=False)
+    state_dict = torch.load(
+        config.parameter.conditional_model_load_path,
+        map_location="cpu",
+        weights_only=False,
+    )
     state_dict.pop("_metadata", None)
 
     # Create a new dictionary with updated keys
@@ -135,10 +157,32 @@ def init_conditional_flow_model(config, device):
 
     return flow_model
 
-def generate_airfoil_curve(resolution):
-    prior_x = unconditional_flow_model.gaussian_process.sample(
-        dims=[resolution], n_samples=1, n_channels=1
-    )
+
+def generate_airfoil_curve(
+    resolution, seed=None, prior_x=None, select_last_prior=False
+):
+    if seed is not None:
+        print("Setting random seed to: ", seed)
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+
+    if select_last_prior and prior_x is not None:
+        assert (
+            prior_x is not None
+        ), "prior_x should not be None when select_last_prior is True"
+        if prior_x.shape[-1] != resolution:
+            prior_x = torch.nn.functional.interpolate(
+                prior_x,
+                size=(resolution,),
+                mode="linear",  # "cubic",
+                align_corners=True,
+            )
+    else:
+        prior_x = unconditional_flow_model.gaussian_process.sample(
+            dims=[resolution], n_samples=1, n_channels=1
+        )
+
     sample_trajectory_x = unconditional_flow_model.sample_process(
         n_dims=[resolution],
         n_channels=1,
@@ -166,7 +210,8 @@ def generate_airfoil_curve(resolution):
     ]
     curve_json = json.dumps(curve_data, indent=2)
     print(airfoil_generated_normed.cpu().numpy().shape)
-    return fig, curve_json, airfoil_generated_normed.squeeze().cpu().numpy()
+    return fig, curve_json, airfoil_generated_normed.squeeze().cpu().numpy(), prior_x
+
 
 def generate_constraints(
     resolution: int,
@@ -247,9 +292,7 @@ def generate_constraints(
         y_max = constraint["y_max"]
         delta = constraint["delta"]
         points_id_constraints_for_editing_list.append(
-            np.where((xs >= x_min) & (xs <= x_max) & (ys >= y_min) & (ys <= y_max))[
-                0
-            ]
+            np.where((xs >= x_min) & (xs <= x_max) & (ys >= y_min) & (ys <= y_max))[0]
         )
         delta_list.append(delta)
 
@@ -259,9 +302,7 @@ def generate_constraints(
 
     # Sample noise
     noise_pattern = (
-        gp.sample(dims=[resolution], n_samples=1, n_channels=1)
-        .squeeze(0)
-        .to(device)
+        gp.sample(dims=[resolution], n_samples=1, n_channels=1).squeeze(0).to(device)
     )
     noise_pattern_copy = noise_pattern.clone()
     noise_pattern.fill_(0)
@@ -321,6 +362,7 @@ def generate_constraints(
         ys_controlled_edited,
     )
 
+
 def generate_editing_airfoil_curve(
     resolution,
     airfoil_for_editing_numpy,
@@ -337,9 +379,7 @@ def generate_editing_airfoil_curve(
 
     t_span = torch.linspace(0.0, 1.0, t_steps).to(device)
     airfoil_for_editing_normed = (
-        torch.tensor(airfoil_for_editing_numpy, device=device)
-        .unsqueeze(0)
-        .unsqueeze(0)
+        torch.tensor(airfoil_for_editing_numpy, device=device).unsqueeze(0).unsqueeze(0)
     )
 
     if latent_initialization == "Random latent function initialization":
@@ -465,21 +505,27 @@ def generate_editing_airfoil_curve(
 
         return fig, curve_json
 
+
 def generate_airfoil_from_physical_params(resolution, *args):
     prior_x = conditional_flow_model.gaussian_process.sample(
         dims=[resolution], n_samples=1, n_channels=1
     )
-    y = (torch.tensor(args).reshape(1,15).to(device) - train_dataset_mean.reshape(1,15).to(device)) / (train_dataset_std.reshape(1,15).to(device) + 1e-8)
-    sample_trajectory_x = conditional_flow_model.sample_process(
-        n_dims=[resolution],
-        n_channels=1,
-        t_span=torch.linspace(0.0, 1.0, 1000),
-        batch_size=1,
-        x_0=prior_x,
-        condition=y.to(device).repeat(1,1),
+    y = (
+        torch.tensor(args).reshape(1, 15).to(device)
+        - train_dataset_mean.reshape(1, 15).to(device)
+    ) / (train_dataset_std.reshape(1, 15).to(device) + 1e-8)
+    sample_x, logp_x, logp_x1_minus_logp_x0 = (
+        conditional_flow_model.sample_with_log_prob(
+            n_dims=[resolution],
+            n_channels=1,
+            t_span=torch.linspace(0.0, 1.0, 1000),
+            batch_size=1,
+            x_0=prior_x,
+            condition=y.to(device).repeat(1, 1),
+        )
     )
 
-    airfoil_generated_normed = sample_trajectory_x[-1, 0, 0, :]
+    airfoil_generated_normed = sample_x.detach()[0, 0, :]
 
     airfoil_generated = (airfoil_generated_normed + 1) / 2.0 * (
         train_dataset_max[1] - train_dataset_min[1]
@@ -487,7 +533,29 @@ def generate_airfoil_from_physical_params(resolution, *args):
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, resolution)) + 1) / 2
 
-    ys = airfoil_generated.squeeze().cpu().numpy()
+    ys = airfoil_generated.cpu().numpy()
+
+    coordination_xy = np.concatenate([xs[:, None], ys[:, None]], axis=-1)
+
+    Fit = Fit_airfoil(data=coordination_xy)
+    parsec_features = Fit.parsec_features
+    (
+        rf_real,
+        t4u_real,
+        t4l_real,
+        xumax_real,
+        yumax_real,
+        xlmax_real,
+        ylmax_real,
+        t25u_real,
+        t25l_real,
+        angle_real,
+        te1_real,
+        xr_real,
+        yr_real,
+        t60u_real,
+        t60l_real,
+    ) = parsec_features
 
     fig, xs, ys = render_fig(
         xs=xs,
@@ -498,7 +566,353 @@ def generate_airfoil_from_physical_params(resolution, *args):
         {"x": float(x_val), "y": float(y_val)} for x_val, y_val in zip(xs, ys)
     ]
     curve_json = json.dumps(curve_data, indent=2)
-    return fig, curve_json, airfoil_generated_normed.squeeze().cpu().numpy()
+    return (
+        fig,
+        curve_json,
+        airfoil_generated_normed.cpu().numpy(),
+        rf_real,
+        t4u_real,
+        t4l_real,
+        xumax_real,
+        yumax_real,
+        xlmax_real,
+        ylmax_real,
+        t25u_real,
+        t25l_real,
+        angle_real,
+        te1_real,
+        xr_real,
+        yr_real,
+        t60u_real,
+        t60l_real,
+        logp_x.item(),
+    )
+
+
+def generate_airfoil_from_physical_params_with_finetuning(
+    resolution,
+    rf,
+    t4u,
+    t4l,
+    xumax,
+    yumax,
+    xlmax,
+    ylmax,
+    t25u,
+    t25l,
+    angle,
+    te1,
+    xr,
+    yr,
+    t60u,
+    t60l,
+    finetune_iterations=10,
+    t_steps=1000,
+    latent_initialization="Inverse prior initialization",
+    progress=gr.Progress(),
+):
+    prior_x = conditional_flow_model.gaussian_process.sample(
+        dims=[resolution], n_samples=1, n_channels=1
+    )
+    y = (
+        torch.tensor(
+            (
+                rf,
+                t4u,
+                t4l,
+                xumax,
+                yumax,
+                xlmax,
+                ylmax,
+                t25u,
+                t25l,
+                angle,
+                te1,
+                xr,
+                yr,
+                t60u,
+                t60l,
+            )
+        )
+        .reshape(1, 15)
+        .to(device)
+        - train_dataset_mean.reshape(1, 15).to(device)
+    ) / (train_dataset_std.reshape(1, 15).to(device) + 1e-8)
+
+    # test_code
+    t_span = torch.linspace(0.0, 1.0, t_steps).to(device)
+    (
+        sample_x,
+        logp_x,
+        logp_x1_minus_logp_x0,
+    ) = conditional_flow_model.sample_with_log_prob(
+        n_dims=[resolution],
+        n_channels=1,
+        t_span=t_span,
+        x_0=prior_x,
+        condition=y.to(device).repeat(1, 1),
+        with_grad=False,
+    )
+
+    if latent_initialization == "Random latent function initialization":
+        inverse_prior = unconditional_flow_model.gaussian_process.sample(
+            dims=[resolution], n_samples=1, n_channels=1
+        )
+    elif latent_initialization == "Zero latent function initialization":
+        inverse_prior = torch.zeros(1, 1, resolution).to(device)
+    elif latent_initialization == "Inverse prior initialization":
+        inverse_prior = unconditional_flow_model.inverse_sample(
+            n_dims=[resolution],
+            n_channels=1,
+            t_span=(
+                torch.linspace(0.0, 1.0, 100).to(device) if t_steps < 100 else t_span
+            ),
+            x_0=sample_x,
+        )
+        if inverse_prior.abs().max() > 1000:
+            print(
+                "Inverse prior is too large, please check the input parameters. Turning to zero initialization."
+            )
+            inverse_prior = torch.zeros(1, 1, resolution).to(device)
+    else:
+        inverse_prior = torch.zeros(1, 1, resolution).to(device)
+
+    # deep copy the flow model for regression
+    flow_model_for_regression = OptimalTransportFunctionalFlowForRegression(
+        config=config.flow_model_regression,
+        model=copy.deepcopy(unconditional_flow_model.model),
+        prior=inverse_prior,
+    ).to(device)
+
+    optimizer = torch.optim.Adam(
+        find_parameters(flow_model_for_regression),
+        lr=config.parameter.learning_rate,
+    )
+
+    scheduler = CosineAnnealingWarmupLR(
+        optimizer,
+        T_max=finetune_iterations,
+        eta_min=2e-6,
+        warmup_steps=config.parameter.warmup_steps,
+    )
+
+    for iteration in progress.tqdm(range(finetune_iterations)):
+        flow_model_for_regression.train()
+
+        x_0_repeat = flow_model_for_regression.prior.repeat(1, 1, 1)
+        (
+            x_1_repeat,
+            logp_1_repeat,
+            logp_x1_minus_logp_x0,
+        ) = flow_model_for_regression.sample_with_log_prob(
+            t_span=t_span, x_0=x_0_repeat, using_Hutchinson_trace_estimator=True
+        )
+
+        airfoil_generated_normed = x_1_repeat[0, 0, :]
+
+        airfoil_generated = (airfoil_generated_normed + 1) / 2.0 * (
+            train_dataset_max[1] - train_dataset_min[1]
+        ) + train_dataset_min[1]
+
+        xs = (
+            torch.cos(
+                torch.linspace(
+                    0.0,
+                    2.0 * torch.pi,
+                    resolution,
+                    device=airfoil_generated.device,  # keep on same device
+                    dtype=airfoil_generated.dtype,
+                )  # keep same precision
+            )
+            + 1.0
+        ) / 2.0
+
+        ys = airfoil_generated.squeeze()
+
+        coordination_xy = torch.stack((xs, ys), dim=1)
+
+        airfoil_metric = calculate_airfoil_metric_n15(x=xs, y=ys, n_inner_steps=20000)
+
+        (
+            rf_real,
+            t4u_real,
+            t4l_real,
+            xumax_real,
+            yumax_real,
+            xlmax_real,
+            ylmax_real,
+            t25u_real,
+            t25l_real,
+            angle_real,
+            te1_real,
+            xr_real,
+            yr_real,
+            t60u_real,
+            t60l_real,
+        ) = airfoil_metric
+        metric = torch.stack(
+            (
+                rf_real,
+                t4u_real,
+                t4l_real,
+                xumax_real,
+                yumax_real,
+                xlmax_real,
+                ylmax_real,
+                t25u_real,
+                t25l_real,
+                angle_real,
+                te1_real,
+                xr_real,
+                yr_real,
+                t60u_real,
+                t60l_real,
+            ),
+            dim=0,
+        )
+
+        loss_1 = torch.mean(
+            0.5
+            * torch.sum(
+                (
+                    (
+                        (
+                            metric
+                            - torch.tensor(
+                                (
+                                    rf,
+                                    t4u,
+                                    t4l,
+                                    xumax,
+                                    yumax,
+                                    xlmax,
+                                    ylmax,
+                                    t25u,
+                                    t25l,
+                                    angle,
+                                    te1,
+                                    xr,
+                                    yr,
+                                    t60u,
+                                    t60l,
+                                )
+                            ).to(device)
+                        )
+                        / train_dataset_std.to(device)
+                    )
+                    ** 2
+                )
+            )
+            / 0.001
+        )
+        loss_2 = -logp_1_repeat.mean()
+
+        loss = loss_1 + loss_2
+
+        optimizer.zero_grad()
+        loss.backward()
+        gradient_norm = torch.nn.utils.clip_grad_norm_(
+            find_parameters(flow_model_for_regression), 1.0
+        )
+
+        optimizer.step()
+        scheduler.step()
+
+        acc_train_loss = loss.mean().item()
+        print(
+            f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, loss 1: {loss_1.mean().item():.5f}, loss 2: {loss_2.mean().item():.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
+        )
+
+    flow_model_for_regression.eval()
+    with torch.no_grad():
+        (
+            sample_x_ft,
+            logp_x_ft,
+            logp_x1_minus_logp_x0,
+        ) = flow_model_for_regression.sample_with_log_prob(
+            n_dims=[resolution],
+            n_channels=1,
+            t_span=t_span,
+            x_0=flow_model_for_regression.prior,
+        )
+
+        airfoil_generated_normed = sample_x_ft[0, 0, :]
+
+        airfoil_generated = (airfoil_generated_normed + 1) / 2.0 * (
+            train_dataset_max[1] - train_dataset_min[1]
+        ) + train_dataset_min[1]
+
+        xs = (
+            torch.cos(
+                torch.linspace(
+                    0.0,
+                    2.0 * torch.pi,
+                    resolution,
+                    device=airfoil_generated.device,  # keep on same device
+                    dtype=airfoil_generated.dtype,
+                )  # keep same precision
+            )
+            + 1.0
+        ) / 2.0
+
+        ys = airfoil_generated.squeeze()
+
+        coordination_xy = torch.stack((xs, ys), dim=1)
+
+        Fit = Fit_airfoil(data=coordination_xy.cpu().numpy())
+        parsec_features = Fit.parsec_features
+        (
+            rf_real,
+            t4u_real,
+            t4l_real,
+            xumax_real,
+            yumax_real,
+            xlmax_real,
+            ylmax_real,
+            t25u_real,
+            t25l_real,
+            angle_real,
+            te1_real,
+            xr_real,
+            yr_real,
+            t60u_real,
+            t60l_real,
+        ) = parsec_features
+
+        # airfoil_metric = calculate_airfoil_metric_n15(x=xs, y=ys, n_inner_steps=20000)
+        # rf_real, t4u_real, t4l_real, xumax_real, yumax_real, xlmax_real, ylmax_real, t25u_real, t25l_real, angle_real, te1_real, xr_real, yr_real, t60u_real, t60l_real = airfoil_metric
+
+        fig, xs, ys = render_fig(
+            xs=xs.cpu().numpy(),
+            ys=ys.cpu().numpy(),
+        )
+
+        curve_data = [
+            {"x": float(x_val), "y": float(y_val)} for x_val, y_val in zip(xs, ys)
+        ]
+        curve_json = json.dumps(curve_data, indent=2)
+        return (
+            fig,
+            curve_json,
+            airfoil_generated_normed.squeeze().cpu().numpy(),
+            rf_real,
+            t4u_real,
+            t4l_real,
+            xumax_real,
+            yumax_real,
+            xlmax_real,
+            ylmax_real,
+            t25u_real,
+            t25l_real,
+            angle_real,
+            te1_real,
+            xr_real,
+            yr_real,
+            t60u_real,
+            t60l_real,
+            logp_x.item(),
+            logp_x_ft.item(),
+        )
 
 
 with gr.Blocks() as demo:
@@ -628,12 +1042,13 @@ with gr.Blocks() as demo:
     loaded_tensors = load_file(f"train_datasets.safetensors")
     train_dataset_min = loaded_tensors["train_dataset_min"]
     train_dataset_max = loaded_tensors["train_dataset_max"]
-    stats = torch.load('mean_std.pt')
-    train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
+    stats = torch.load("mean_std.pt")
+    train_dataset_mean, train_dataset_std = stats["mean"], stats["std"]
 
     unconditional_flow_model = init_unconditional_flow_model(config, device)
     conditional_flow_model = init_conditional_flow_model(config, device)
-    
+
+    prior_x = gr.State()
     airfoil_for_editing = gr.State()
     constraints_for_editing = gr.State()
     points_id_constraints_for_editing_all = gr.State()
@@ -650,6 +1065,8 @@ with gr.Blocks() as demo:
 
     with gr.Row():
         resolution = gr.Number(value=257, label="Resolution")
+        seed = gr.Number(value=None, label="Random Seed")
+        select_last_prior = gr.Checkbox(value=False, label="Select last prior")
 
     gr.Markdown("## Airfoil Generation (Unconditional)")
 
@@ -664,35 +1081,120 @@ with gr.Blocks() as demo:
     gr.Markdown("### Input physical parameters for conditional generation")
 
     with gr.Row():
-        rf = gr.Number(value=0.01, label="Leading edge radius")
-        t4u = gr.Number(value=0.035, label="Upper surface thickness at 4% chord length")
-        t4l = gr.Number(value=-0.02, label="Lower surface thickness at 4% chord length")
+        rf = gr.Number(value=0.01, label="Leading edge radius (Design)")
+        t4u = gr.Number(
+            value=0.035, label="Upper surface thickness at 4% chord length (Design)"
+        )
+        t4l = gr.Number(
+            value=-0.02, label="Lower surface thickness at 4% chord length (Design)"
+        )
 
     with gr.Row():
-        xumax = gr.Number(value=0.47, label="X-coordinate of maximum upper surface thickness")
-        yumax = gr.Number(value=0.07, label="Y-coordinate of maximum upper surface thickness")
-        xlmax = gr.Number(value=0.36, label="X-coordinate of maximum lower surface thickness")
+        rf_real = gr.Number(value=None, label="Leading edge radius (Generated)")
+        t4u_real = gr.Number(
+            value=None, label="Upper surface thickness at 4% chord length (Generated)"
+        )
+        t4l_real = gr.Number(
+            value=None, label="Lower surface thickness at 4% chord length (Generated)"
+        )
 
     with gr.Row():
-        ylmax = gr.Number(value=-0.05, label="Y-coordinate of maximum lower surface thickness")
-        t25u = gr.Number(value=0.064, label="Upper surface thickness at 25% chord length")
-        t25l = gr.Number(value=-0.048, label="Lower surface thickness at 25% chord length")
+        xumax = gr.Number(
+            value=0.47, label="X-coordinate of maximum upper surface thickness (Design)"
+        )
+        yumax = gr.Number(
+            value=0.07, label="Y-coordinate of maximum upper surface thickness (Design)"
+        )
+        xlmax = gr.Number(
+            value=0.36, label="X-coordinate of maximum lower surface thickness (Design)"
+        )
 
     with gr.Row():
-        angle = gr.Number(value=-17.74, label="Upper surface trailing edge angle")
-        te1 = gr.Number(value=0.002, label="Trailing edge thickness")
-        xr = gr.Number(value=0.9, label="Rear loading X-coordinate")
-    
+        xumax_real = gr.Number(
+            value=None,
+            label="X-coordinate of maximum upper surface thickness (Generated)",
+        )
+        yumax_real = gr.Number(
+            value=None,
+            label="Y-coordinate of maximum upper surface thickness (Generated)",
+        )
+        xlmax_real = gr.Number(
+            value=None,
+            label="X-coordinate of maximum lower surface thickness (Generated)",
+        )
+
     with gr.Row():
-        yr = gr.Number(value=0.0098, label="Rear loading Y-coordinate")
-        t60u = gr.Number(value=0.068, label="Upper surface thickness at 60% chord length")
-        t60l = gr.Number(value=-0.036, label="Lower surface thickness at 60% chord length")
+        ylmax = gr.Number(
+            value=-0.05,
+            label="Y-coordinate of maximum lower surface thickness (Design)",
+        )
+        t25u = gr.Number(
+            value=0.064, label="Upper surface thickness at 25% chord length (Design)"
+        )
+        t25l = gr.Number(
+            value=-0.048, label="Lower surface thickness at 25% chord length (Design)"
+        )
+
+    with gr.Row():
+        ylmax_real = gr.Number(
+            value=None,
+            label="Y-coordinate of maximum lower surface thickness (Generated)",
+        )
+        t25u_real = gr.Number(
+            value=None, label="Upper surface thickness at 25% chord length (Generated)"
+        )
+        t25l_real = gr.Number(
+            value=None, label="Lower surface thickness at 25% chord length (Generated)"
+        )
+
+    with gr.Row():
+        angle = gr.Number(
+            value=-17.74, label="Upper surface trailing edge angle (Design)"
+        )
+        te1 = gr.Number(value=0.002, label="Trailing edge thickness (Design)")
+        xr = gr.Number(value=0.9, label="Rear loading X-coordinate (Design)")
+
+    with gr.Row():
+        angle_real = gr.Number(
+            value=None, label="Upper surface trailing edge angle (Generated)"
+        )
+        te1_real = gr.Number(value=None, label="Trailing edge thickness (Generated)")
+        xr_real = gr.Number(value=None, label="Rear loading X-coordinate (Generated)")
+
+    with gr.Row():
+        yr = gr.Number(value=0.0098, label="Rear loading Y-coordinate (Design)")
+        t60u = gr.Number(
+            value=0.068, label="Upper surface thickness at 60% chord length (Design)"
+        )
+        t60l = gr.Number(
+            value=-0.036, label="Lower surface thickness at 60% chord length (Design)"
+        )
+
+    with gr.Row():
+        yr_real = gr.Number(value=None, label="Rear loading Y-coordinate (Generated)")
+        t60u_real = gr.Number(
+            value=None, label="Upper surface thickness at 60% chord length (Generated)"
+        )
+        t60l_real = gr.Number(
+            value=None, label="Lower surface thickness at 60% chord length (Generated)"
+        )
 
     btn_conditional = gr.Button("Generate airfoil with physical constraints")
+    with gr.Row():
+        logp_x = gr.Number(value=None, label="Log probability of generated airfoil")
+    btn_conditional_ft = gr.Button(
+        "Generate airfoil with physical constraints with finetuning"
+    )
+    with gr.Row():
+        logp_x_ft = gr.Number(
+            value=None, label="Log probability of generated airfoil with finetuning"
+        )
 
     with gr.Row():
         plot_conditional = gr.Plot(label="Airfoil Generation (Conditional)")
-        text_conditional = gr.Textbox(label="Airfoil Curve Data (JSON Format)", interactive=False)
+        text_conditional = gr.Textbox(
+            label="Airfoil Curve Data (JSON Format)", interactive=False
+        )
 
     gr.Markdown("## Airfoil Editing (by fixing and modifying certain points)")
 
@@ -711,7 +1213,7 @@ with gr.Blocks() as demo:
     btn_2 = gr.Button("Set constraints")
 
     with gr.Row():
-        plot_2 = gr.Plot(label="Airfoil Editing (Original)")
+        # plot_2 = gr.Plot(label="Airfoil Editing (Original)")
         text_2 = gr.Textbox(label="Constraint Points (JSON Format)", interactive=False)
 
     gr.Markdown("### Finetune the airfoil curve")
@@ -732,19 +1234,104 @@ with gr.Blocks() as demo:
     btn_3 = gr.Button("Generate random constraints")
 
     with gr.Row():
-        plot_3 = gr.Plot(label="Airfoil Editing (Edited)")
+        # plot_3 = gr.Plot(label="Airfoil Editing (Edited)")
         text_3 = gr.Textbox(label="Airfoil Curve Data (JSON Format)", interactive=False)
+
+    with gr.Row():
+        plot_2 = gr.Plot(label="Airfoil Editing (Original)")
+        plot_3 = gr.Plot(label="Airfoil Editing (Edited)")
 
     btn_1.click(
         generate_airfoil_curve,
-        inputs=[resolution],
-        outputs=[plot_1, text_1, airfoil_for_editing],
+        inputs=[resolution, seed, prior_x, select_last_prior],
+        outputs=[plot_1, text_1, airfoil_for_editing, prior_x],
     )
-    
+
     btn_conditional.click(
         generate_airfoil_from_physical_params,
-        inputs=[resolution, rf, t4u, t4l, xumax, yumax, xlmax, ylmax, t25u, t25l, angle, te1, xr, yr, t60u, t60l],
-        outputs=[plot_conditional, text_conditional, airfoil_for_editing]
+        inputs=[
+            resolution,
+            rf,
+            t4u,
+            t4l,
+            xumax,
+            yumax,
+            xlmax,
+            ylmax,
+            t25u,
+            t25l,
+            angle,
+            te1,
+            xr,
+            yr,
+            t60u,
+            t60l,
+        ],
+        outputs=[
+            plot_conditional,
+            text_conditional,
+            airfoil_for_editing,
+            rf_real,
+            t4u_real,
+            t4l_real,
+            xumax_real,
+            yumax_real,
+            xlmax_real,
+            ylmax_real,
+            t25u_real,
+            t25l_real,
+            angle_real,
+            te1_real,
+            xr_real,
+            yr_real,
+            t60u_real,
+            t60l_real,
+            logp_x,
+        ],
+    )
+
+    btn_conditional_ft.click(
+        generate_airfoil_from_physical_params_with_finetuning,
+        inputs=[
+            resolution,
+            rf,
+            t4u,
+            t4l,
+            xumax,
+            yumax,
+            xlmax,
+            ylmax,
+            t25u,
+            t25l,
+            angle,
+            te1,
+            xr,
+            yr,
+            t60u,
+            t60l,
+        ],
+        outputs=[
+            plot_conditional,
+            text_conditional,
+            airfoil_for_editing,
+            rf_real,
+            t4u_real,
+            t4l_real,
+            xumax_real,
+            yumax_real,
+            xlmax_real,
+            ylmax_real,
+            t25u_real,
+            t25l_real,
+            angle_real,
+            te1_real,
+            xr_real,
+            yr_real,
+            t60u_real,
+            t60l_real,
+            logp_x,
+            logp_x_ft,
+        ],
     )
 
     btn_2.click(

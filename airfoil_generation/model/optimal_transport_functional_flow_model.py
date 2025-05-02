@@ -236,6 +236,223 @@ class OptimalTransportFunctionalFlow(nn.Module):
 
         return data
 
+    def sample_with_log_prob(
+        self,
+        n_dims: List[int] = None,
+        n_channels: int = None,
+        t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
+        x_0: torch.Tensor = None,
+        log_prob_x_0: torch.Tensor = None,
+        function_log_prob_x_0: Union[callable, nn.Module] = None,
+        condition: torch.Tensor = None,
+        with_grad: bool = True,
+        solver_config: EasyDict = None,
+        using_Hutchinson_trace_estimator: bool = True,
+    ) -> Tuple[torch.Tensor]:
+        """
+        Overview:
+            Sample from the model with log probability.
+        Arguments:
+            - t_span (torch.Tensor): time span to sample over
+            - x_0 (torch.Tensor): initial condition
+            - log_prob_x_0 (torch.Tensor): log probability of the initial condition
+            - function_log_prob_x_0 (Union[callable, nn.Module]): function to compute the log probability of the initial condition
+            - condition (torch.Tensor): condition
+            - with_grad (bool): whether to compute gradients
+            - solver_config (EasyDict): configuration for the solver
+            - using_Hutchinson_trace_estimator (bool): whether to use Hutchinson trace estimator
+        Returns:
+            - x1 (torch.Tensor): sampled data
+        """
+
+        x1, log_likelihood, logp_x1_minus_logp_x0 = self.sample_process_with_log_prob(
+            n_dims=n_dims,
+            n_channels=n_channels,
+            t_span=t_span,
+            batch_size=batch_size,
+            x_0=x_0,
+            log_prob_x_0=log_prob_x_0,
+            function_log_prob_x_0=function_log_prob_x_0,
+            condition=condition,
+            with_grad=with_grad,
+            solver_config=solver_config,
+            using_Hutchinson_trace_estimator=using_Hutchinson_trace_estimator,
+        )
+
+        return x1[-1], log_likelihood[-1], logp_x1_minus_logp_x0[-1]
+
+    def sample_process_with_log_prob(
+        self,
+        n_dims: List[int] = None,
+        n_channels: int = None,
+        t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
+        x_0: torch.Tensor = None,
+        log_prob_x_0: torch.Tensor = None,
+        function_log_prob_x_0: Union[callable, nn.Module] = None,
+        condition: torch.Tensor = None,
+        with_grad: bool = True,
+        solver_config: EasyDict = None,
+        using_Hutchinson_trace_estimator: bool = True,
+    ):
+        """
+        Overview:
+            Sample from the model with log probability.
+        Arguments:
+            - t_span (torch.Tensor): time span to sample over
+            - x_0 (torch.Tensor): initial condition
+            - log_prob_x_0 (torch.Tensor): log probability of the initial condition
+            - function_log_prob_x_0 (Union[callable, nn.Module]): function to compute the log probability of the initial condition
+            - condition (torch.Tensor): condition
+            - with_grad (bool): whether to compute gradients
+            - solver_config (EasyDict): configuration for the solver
+            - using_Hutchinson_trace_estimator (bool): whether to use Hutchinson trace estimator
+        Returns:
+            - x1 (torch.Tensor): sampled data
+        """
+
+        model_drift = lambda t, x: self.model(t, x, condition)
+        model_params = find_parameters(self)
+
+        def compute_trace_of_jacobian_general(dx, x):
+            # if x is complex, change to real
+            if x.dtype == torch.complex64 or x.dtype == torch.complex128:
+                x = x.real
+            # Assuming x has shape (B, D1, ..., Dn)
+            shape = x.shape[1:]  # get the shape of a single element in the batch
+            outputs = torch.zeros(
+                x.shape[0], device=x.device, dtype=x.dtype
+            )  # trace for each batch
+            # Iterate through each index in the product of dimensions
+            for index in torch.cartesian_prod(*(torch.arange(s) for s in shape)):
+                if len(index.shape) > 0:
+                    index = tuple(index)
+                else:
+                    index = (index,)
+                grad_outputs = torch.zeros_like(x)
+                grad_outputs[(slice(None), *index)] = (
+                    1  # set one at the specific index across all batches
+                )
+                grads = torch.autograd.grad(
+                    outputs=dx, inputs=x, grad_outputs=grad_outputs, retain_graph=True
+                )[0]
+                outputs += grads[(slice(None), *index)]
+            return outputs
+
+        def compute_trace_of_jacobian_by_Hutchinson_Skilling(dx, x, eps):
+            """Create the divergence function of `fn` using the Hutchinson-Skilling trace estimator."""
+
+            fn_eps = torch.sum(dx * eps)
+            grad_fn_eps = torch.autograd.grad(fn_eps, x, create_graph=True)[0]
+            outputs = torch.sum(grad_fn_eps * eps, dim=tuple(range(1, len(x.shape))))
+            return outputs
+
+        def composite_drift(t, x):
+            # where x is actually x0_and_diff_logp, (x0, diff_logp), which is a tuple containing x and logp_xt_minus_logp_x0
+            with torch.set_grad_enabled(True):
+                t = t.detach()
+                x_t = x[0].detach()
+                logp_xt_minus_logp_x0 = x[1]
+
+                x_t.requires_grad = True
+                t.requires_grad = True
+
+                dx = model_drift(t, x_t)
+                if using_Hutchinson_trace_estimator:
+                    noise = torch.randn_like(x_t, device=x_t.device)
+                    logp_drift = -compute_trace_of_jacobian_by_Hutchinson_Skilling(
+                        dx, x_t, noise
+                    )
+                    # logp_drift = - divergence_approx(dx, x_t, noise)
+                else:
+                    logp_drift = -compute_trace_of_jacobian_general(dx, x_t)
+
+                return dx, logp_drift
+
+        if batch_size is None:
+            extra_batch_size = torch.tensor((1,), device=self.device)
+        elif isinstance(batch_size, int):
+            extra_batch_size = torch.tensor((batch_size,), device=self.device)
+        else:
+            if (
+                isinstance(batch_size, torch.Size)
+                or isinstance(batch_size, Tuple)
+                or isinstance(batch_size, List)
+            ):
+                extra_batch_size = torch.tensor(batch_size, device=self.device)
+            else:
+                assert False, "Invalid batch size"
+
+        if x_0 is not None and condition is not None:
+            assert (
+                x_0.shape[0] == condition.shape[0]
+            ), "The batch size of x_0 and condition must be the same"
+            data_batch_size = x_0.shape[0]
+        elif x_0 is not None:
+            data_batch_size = x_0.shape[0]
+        elif condition is not None:
+            data_batch_size = condition.shape[0]
+        else:
+            data_batch_size = 1
+
+        if x_0 is None:
+            x_0 = self.gaussian_process.sample_from_prior(
+                dims=n_dims,
+                n_samples=torch.prod(extra_batch_size) * data_batch_size,
+                n_channels=n_channels,
+            )
+
+        x0_and_diff_logp = (x_0, torch.zeros(x_0.shape[0], device=x_0.device))
+
+        if t_span is None:
+            t_span = torch.linspace(0.0, 1.0, 1000).to(x.device)
+        else:
+            t_span = t_span.to(x_0.device)
+
+        if solver_config is not None:
+            solver = get_solver(solver_config.type)(**solver_config.args)
+        else:
+            # solver = ODESolver(library="torchdiffeq_adjoint")
+            solver = ODESolver(library="torchdiffeq")
+
+        if with_grad:
+            x1_and_logpx1 = solver.integrate(
+                drift=composite_drift,
+                x0=x0_and_diff_logp,
+                t_span=t_span,
+                # adjoint_params=model_params,
+            )
+        else:
+            # TODO: check if it is correct
+            with torch.no_grad():
+                x1_and_logpx1 = solver.integrate(
+                    drift=composite_drift,
+                    x0=x0_and_diff_logp,
+                    t_span=t_span,
+                    # adjoint_params=model_params,
+                )
+
+        logp_x1_minus_logp_x0 = x1_and_logpx1[1]
+        x1 = x1_and_logpx1[0]
+
+        if log_prob_x_0 is not None:
+            log_likelihood = log_prob_x_0 + logp_x1_minus_logp_x0
+        elif function_log_prob_x_0 is not None:
+            log_prob_x_0 = function_log_prob_x_0(x0)
+            log_likelihood = log_prob_x_0 + logp_x1_minus_logp_x0
+        elif x_0 is not None:
+            # TODO: check if it is correct
+
+            log_prob_x_0 = self.gaussian_process.prior_likelihood(x_0)
+            log_likelihood = log_prob_x_0 + logp_x1_minus_logp_x0
+        else:
+            log_likelihood = torch.zeros_like(
+                logp_x1_minus_logp_x0, device=logp_x1_minus_logp_x0.device
+            )
+
+        return x1, log_likelihood, logp_x1_minus_logp_x0
+
     def inverse_sample(
         self,
         n_dims: List[int],
@@ -508,9 +725,9 @@ class OptimalTransportFunctionalFlow(nn.Module):
                 else:
                     index = (index,)
                 grad_outputs = torch.zeros_like(x)
-                grad_outputs[
-                    (slice(None), *index)
-                ] = 1  # set one at the specific index across all batches
+                grad_outputs[(slice(None), *index)] = (
+                    1  # set one at the specific index across all batches
+                )
                 grads = torch.autograd.grad(
                     outputs=dx, inputs=x, grad_outputs=grad_outputs, retain_graph=True
                 )[0]
@@ -937,7 +1154,10 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
 
     def sample_with_log_prob(
         self,
+        n_dims: List[int] = None,
+        n_channels: int = None,
         t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
         x_0: torch.Tensor = None,
         log_prob_x_0: torch.Tensor = None,
         function_log_prob_x_0: Union[callable, nn.Module] = None,
@@ -963,7 +1183,10 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
         """
 
         x1, log_likelihood, logp_x1_minus_logp_x0 = self.sample_process_with_log_prob(
+            n_dims=n_dims,
+            n_channels=n_channels,
             t_span=t_span,
+            batch_size=batch_size,
             x_0=x_0,
             log_prob_x_0=log_prob_x_0,
             function_log_prob_x_0=function_log_prob_x_0,
@@ -977,7 +1200,10 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
 
     def sample_process_with_log_prob(
         self,
+        n_dims: List[int] = None,
+        n_channels: int = None,
         t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
         x_0: torch.Tensor = None,
         log_prob_x_0: torch.Tensor = None,
         function_log_prob_x_0: Union[callable, nn.Module] = None,
@@ -1021,9 +1247,9 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
                 else:
                     index = (index,)
                 grad_outputs = torch.zeros_like(x)
-                grad_outputs[
-                    (slice(None), *index)
-                ] = 1  # set one at the specific index across all batches
+                grad_outputs[(slice(None), *index)] = (
+                    1  # set one at the specific index across all batches
+                )
                 grads = torch.autograd.grad(
                     outputs=dx, inputs=x, grad_outputs=grad_outputs, retain_graph=True
                 )[0]
@@ -1059,6 +1285,39 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
                     logp_drift = -compute_trace_of_jacobian_general(dx, x_t)
 
                 return dx, logp_drift
+
+        if batch_size is None:
+            extra_batch_size = torch.tensor((1,), device=self.device)
+        elif isinstance(batch_size, int):
+            extra_batch_size = torch.tensor((batch_size,), device=self.device)
+        else:
+            if (
+                isinstance(batch_size, torch.Size)
+                or isinstance(batch_size, Tuple)
+                or isinstance(batch_size, List)
+            ):
+                extra_batch_size = torch.tensor(batch_size, device=self.device)
+            else:
+                assert False, "Invalid batch size"
+
+        if x_0 is not None and condition is not None:
+            assert (
+                x_0.shape[0] == condition.shape[0]
+            ), "The batch size of x_0 and condition must be the same"
+            data_batch_size = x_0.shape[0]
+        elif x_0 is not None:
+            data_batch_size = x_0.shape[0]
+        elif condition is not None:
+            data_batch_size = condition.shape[0]
+        else:
+            data_batch_size = 1
+
+        if x_0 is None:
+            x_0 = self.gaussian_process.sample_from_prior(
+                dims=n_dims,
+                n_samples=torch.prod(extra_batch_size) * data_batch_size,
+                n_channels=n_channels,
+            )
 
         x0_and_diff_logp = (x_0, torch.zeros(x_0.shape[0], device=x_0.device))
 
@@ -1384,9 +1643,9 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
                 else:
                     index = (index,)
                 grad_outputs = torch.zeros_like(x)
-                grad_outputs[
-                    (slice(None), *index)
-                ] = 1  # set one at the specific index across all batches
+                grad_outputs[(slice(None), *index)] = (
+                    1  # set one at the specific index across all batches
+                )
                 grads = torch.autograd.grad(
                     outputs=dx, inputs=x, grad_outputs=grad_outputs, retain_graph=True
                 )[0]

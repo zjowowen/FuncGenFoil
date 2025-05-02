@@ -105,8 +105,11 @@ class CSTLayer:
 
 class Fit_airfoil:
     """
-    Fit airfoil by 3 order Bspline and extract Parsec features.
-    airfoil (npoints,2)
+    Overview:
+        Fit airfoil by 3 order Bspline and extract Parsec features.
+        airfoil (npoints,2)
+    Interface:
+        __init__, get_parsec_n15, objective
     """
 
     def __init__(self, data):
@@ -114,11 +117,34 @@ class Fit_airfoil:
         self.parsec_features = self.get_parsec_n15()
 
     def get_parsec_n15(self):
+        """
+        Overview:
+            Get parsec features from airfoil data.
+        Arguments:
+            data: airfoil data (npoints,2)
+        Returns:
+            parsec_features: parsec features (nfeatures,), which include:
+                - rf: Leading Edge Radius,
+                - t4u: 4% Chord Upper Surface Thickness,
+                - t4l: 4% Chord Lower Surface Thickness,
+                - xumax: Upper Surface Maximum Thickness X Coordinate,
+                - yumax: Upper Surface Maximum Thickness Y Coordinate,
+                - xlmax: Lower Surface Maximum Thickness X Coordinate,
+                - ylmax: Lower Surface Maximum Thickness Y Coordinate,
+                - t25u: 25% Chord Upper Surface Thickness,
+                - t25l: 25% Chord Lower Surface Thickness,
+                - angle: Upper Surface Trailing Edge Angle,
+                - te1: Trailing Edge Thickness,
+                - xr: Trailing Edge Load X Coordinate,
+                - yr: Trailing Edge Load Y Coordinate,
+                - t60u: 60% Chord Upper Surface Thickness,
+                - t60l: 60% Chord Lower Surface Thickness
+        """
         data = self.data
         x = data[:, 0]
         y = data[:, 1]
 
-        a = (data[0, 1] - data[1, 1]) / (data[0, 0] - data[1, 0])
+        a = (data[0, -1] - data[9, -1]) / (data[0, 0] - data[9, 0])
         theta_radians = math.atan(a)
         theta_degrees = math.degrees(theta_radians)
         angle = theta_degrees
@@ -154,7 +180,11 @@ class Fit_airfoil:
             args=(xdata, ydata),
             method="Nelder-Mead",
         )
+
         xc, yc, r = result.x
+
+        print(np.sum((np.sqrt((xdata - xc) ** 2 + (ydata - yc) ** 2) - r) ** 2))
+
         rf = r
         # breakpoint()
         return np.array(

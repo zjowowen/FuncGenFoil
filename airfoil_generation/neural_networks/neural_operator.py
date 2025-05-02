@@ -153,7 +153,9 @@ class FourierNeuralOperator(nn.Module):
         # Concatenate position as new channel(s)
         posn_emb = make_posn_embed(batch_size, dims).to(u.device)
         if condition is not None:
-            condition = condition.unsqueeze(2).expand(-1, -1, u.shape[2])  # 扩展成 (B, 11, 257)
+            condition = condition.unsqueeze(2).expand(
+                -1, -1, u.shape[2]
+            )  # 扩展成 (B, 11, 257)
             u = torch.cat((u, posn_emb, t, condition), dim=1).float()
         else:
             u = torch.cat((u, posn_emb, t), dim=1).float()  # todo fix precision

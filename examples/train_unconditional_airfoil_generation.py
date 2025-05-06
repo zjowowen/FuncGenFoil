@@ -89,7 +89,7 @@ def render_video_3x3(
 def main(args):
     
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    accelerator = Accelerator(log_with=None, kwargs_handlers=[ddp_kwargs])
+    accelerator = Accelerator(log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs])
     device = accelerator.device
     state = AcceleratorState()
 
@@ -100,7 +100,7 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    project_name = "airfoil-generation-unconditional"
+    project_name = args.project_name
     config = EasyDict(
         dict(
             device=device,
@@ -163,9 +163,29 @@ def main(args):
         config.parameter.model_load_path
     ):
         # pop out _metadata key
-        state_dict = torch.load(config.parameter.model_load_path, map_location="cpu")
+        state_dict = torch.load(
+            config.parameter.model_load_path,
+            map_location="cpu",
+            weights_only=False,
+        )
         state_dict.pop("_metadata", None)
-        flow_model.model.load_state_dict(state_dict)
+
+        # Create a new dictionary with updated keys
+        prefix = "_orig_mod."
+        new_state_dict = {}
+
+        for key, value in state_dict.items():
+            if key.startswith(prefix):
+                # Remove the prefix from the key
+                new_key = key[len(prefix) :]
+            else:
+                new_key = key
+            new_state_dict[new_key] = value
+
+        flow_model.model.load_state_dict(new_state_dict)
+        print(
+            f"Load model from {config.parameter.model_load_path} successfully!"
+        )
 
     optimizer = torch.optim.Adam(
         flow_model.model.parameters(), lr=config.parameter.learning_rate
@@ -189,19 +209,15 @@ def main(args):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
+        folder_path=args.data_path,
+        num_constraints=args.num_constraints,
     ) if args.dataset == 'supercritical' else (
-        AF200KDataset(split="train")
+        AF200KDataset(
+            split="train",
+            folder_path=args.data_path,
+            num_constraints=args.num_constraints,
+            )
     )
-
-    # test_dataset = Dataset(
-    #     split="test",
-    #     std_cst_augmentation=0.08,
-    #     num_perturbed_airfoils=10,
-    #     dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-    #     max_size=100000,
-    # ) if args.dataset == 'supercritical' else (
-    #     AF200KDataset(split="test")
-    # )
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
@@ -222,7 +238,7 @@ def main(args):
 
     iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
 
-    accelerator.init_trackers("airfoil-generation-unconditioanl", config=None)
+    accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start training ...")
 
     mp_list = []
@@ -348,5 +364,19 @@ if __name__ == "__main__":
     import argparse
     argparser = argparse.ArgumentParser(description='train_parser')
     argparser.add_argument('--dataset', '-d', default='supercritical', type=str, choices=['supercritical', 'af200k'], help="Choose a dataset.")
+    argparser.add_argument('--data_path', '-dp', default="data", type=str, help="Dataset path.")
+    argparser.add_argument('--num_constraints', '-nc', default=15, type=int, help="Number of constraints.")
+    argparser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Whether to use wandb",
+    )
+    argparser.add_argument(
+        "--project_name",
+        type=str,
+        default="airfoil-unconditional-training",
+        help="Project name",
+    )
+
     args = argparser.parse_args()
     main(args)

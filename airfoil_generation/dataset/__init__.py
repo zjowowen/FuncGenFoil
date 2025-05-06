@@ -1,3 +1,4 @@
+import os
 import random
 from typing import List, Dict
 
@@ -17,7 +18,8 @@ class Dataset(torch.utils.data.Dataset):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size: int = 100000,
-        folder_path="airfoil_generation/data",
+        folder_path="data",
+        num_constraints=15,
     ):
         self.split = split
         self.std_cst_augmentation = std_cst_augmentation
@@ -27,18 +29,21 @@ class Dataset(torch.utils.data.Dataset):
         self.len = 0
         self.storage = LazyMemmapStorage(max_size=max_size)
         self.dataset_names = []
+        self.num_constraints = num_constraints
         self.load_data(dataset_names, folder_path=folder_path)
         self.get_min_max()
 
     def load_data(
         self,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-        folder_path="airfoil_generation/data",
+        folder_path="data",
     ):
         for dataset_name in dataset_names:
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_parsec_params.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
             ) as f:
+
                 for line in f.readlines():
                     name_params = line.strip().split(",")
                     # 取出路径的最后一个文件名作为key
@@ -46,12 +51,14 @@ class Dataset(torch.utils.data.Dataset):
                     self.params[name] = np.array(list(map(float, name_params[1:])))
 
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_{self.split}.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                f"{folder_path}/{dataset_name}/{dataset_name}_airfoils.h5", "r"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
             ) as f:
                 for key in temp_key_list:
                     temp_data = torch.from_numpy(f[key][:])
@@ -117,7 +124,8 @@ class PointCloudDataset(torch.utils.data.Dataset):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size: int = 100000,
-        folder_path="airfoil_generation/data",
+        folder_path="data",
+        num_constraints=15,
     ):
         self.split = split
         self.std_cst_augmentation = std_cst_augmentation
@@ -127,17 +135,19 @@ class PointCloudDataset(torch.utils.data.Dataset):
         self.len = 0
         self.storage = LazyMemmapStorage(max_size=max_size)
         self.dataset_names = []
+        self.num_constraints = num_constraints
         self.load_data(dataset_names, folder_path=folder_path)
         self.get_min_max()
 
     def load_data(
         self,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-        folder_path="airfoil_generation/data",
+        folder_path="data",
     ):
         for dataset_name in dataset_names:
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_parsec_params.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
             ) as f:
                 for line in f.readlines():
                     name_params = line.strip().split(",")
@@ -146,13 +156,16 @@ class PointCloudDataset(torch.utils.data.Dataset):
                     self.params[name] = np.array(list(map(float, name_params[1:])))
 
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_{self.split}.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                f"{folder_path}/{dataset_name}/{dataset_name}_airfoils.h5", "r"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
             ) as f:
+
                 for key in temp_key_list:
                     temp_data = torch.from_numpy(f[key][:])
                     params = torch.from_numpy(self.params[key])
@@ -277,7 +290,8 @@ class AF200KDataset(torch.utils.data.Dataset):
             "supercritical_airfoil_af200k",
         ],
         max_size: int = 250000,
-        folder_path="airfoil_generation/data",
+        folder_path="data",
+        num_constraints=15,
     ):
         self.split = split
         self.key_list = []
@@ -285,6 +299,7 @@ class AF200KDataset(torch.utils.data.Dataset):
         self.len = 0
         self.storage = LazyMemmapStorage(max_size=max_size)
         self.dataset_names = []
+        self.num_constraints = num_constraints
         self.load_data(dataset_names, folder_path=folder_path)
         self.get_min_max()
 
@@ -300,13 +315,14 @@ class AF200KDataset(torch.utils.data.Dataset):
             "naca_gen",
             "supercritical_airfoil_af200k",
         ],
-        folder_path="airfoil_generation/data",
+        folder_path="data",
     ):
 
         for dataset_name in dataset_names:
 
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_parsec_params_11.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
             ) as f:
                 for line in f.readlines():
                     name_params = line.strip().split(",")
@@ -315,12 +331,14 @@ class AF200KDataset(torch.utils.data.Dataset):
                     self.params[name] = np.array(list(map(float, name_params[1:])))
 
             with open(
-                f"{folder_path}/{dataset_name}/{dataset_name}_{self.split}.txt"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                f"{folder_path}/{dataset_name}/{dataset_name}_airfoils.h5", "r"
+                os.path.join(
+                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
             ) as f:
                 for key in temp_key_list:
                     temp_data = torch.from_numpy(f[key][:])

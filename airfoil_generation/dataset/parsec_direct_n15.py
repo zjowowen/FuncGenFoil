@@ -103,7 +103,7 @@ class CSTLayer:
         return al, te
 
 
-class Fit_airfoil:
+class Fit_airfoil_15:
     """
     Overview:
         Fit airfoil by 3 order Bspline and extract Parsec features.
@@ -175,7 +175,7 @@ class Fit_airfoil:
         ydata = points[:, 1]
         initial_guess = (0.0025, 0, np.std([xdata, ydata]))
         result = minimize(
-            Fit_airfoil.objective,
+            __class__.objective,
             initial_guess,
             args=(xdata, ydata),
             method="Nelder-Mead",
@@ -183,7 +183,7 @@ class Fit_airfoil:
 
         xc, yc, r = result.x
 
-        print(np.sum((np.sqrt((xdata - xc) ** 2 + (ydata - yc) ** 2) - r) ** 2))
+        # print(np.sum((np.sqrt((xdata - xc) ** 2 + (ydata - yc) ** 2) - r) ** 2))
 
         rf = r
         # breakpoint()

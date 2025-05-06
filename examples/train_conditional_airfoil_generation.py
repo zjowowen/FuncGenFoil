@@ -29,7 +29,7 @@ from easydict import EasyDict
 
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import Dataset, AF200KDataset
-from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 
 from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
@@ -80,7 +80,7 @@ def main(args):
     # breakpoint()
 
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    accelerator = Accelerator(log_with=None, kwargs_handlers=[ddp_kwargs])
+    accelerator = Accelerator(log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs])
     device = accelerator.device
     state = AcceleratorState()
 
@@ -91,7 +91,7 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    project_name = "airfoil-generation-conditional"
+    project_name = args.project_name
     config = EasyDict(
         dict(
             device=device,
@@ -125,7 +125,7 @@ def main(args):
                                 x_dim=1,
                                 t_scaling=1,
                                 n_layers=6,
-                                n_conditions=15,
+                                n_conditions=args.num_constraints,
                             ),
                         ),
                     ),
@@ -181,8 +181,14 @@ def main(args):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
+        folder_path=args.data_path,
+        num_constraints=args.num_constraints,
     ) if args.dataset == 'supercritical' else (
-        AF200KDataset(split="train")
+        AF200KDataset(
+            split="train",
+            folder_path=args.data_path,
+            num_constraints=args.num_constraints,
+        )
     )
 
     test_dataset = Dataset(
@@ -191,8 +197,14 @@ def main(args):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
+        folder_path=args.data_path,
+        num_constraints=args.num_constraints,
     ) if args.dataset == 'supercritical' else (
-        AF200KDataset(split="test")
+        AF200KDataset(
+            split="test",
+            folder_path=args.data_path,
+            num_constraints=args.num_constraints,
+        )
     )
 
     # # save train_dataset_min and train_dataset_max using safetensors
@@ -242,7 +254,7 @@ def main(args):
 
     iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
 
-    accelerator.init_trackers("airfoil-generation-conditional", config=None)
+    accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start training ...")
 
     mp_list = []
@@ -356,5 +368,18 @@ if __name__ == "__main__":
     import argparse
     argparser = argparse.ArgumentParser(description='train_parser')
     argparser.add_argument('--dataset', '-d', default='supercritical', type=str, choices=['supercritical', 'af200k'], help="Choose a dataset.")
+    argparser.add_argument('--data_path', '-dp', default="data", type=str, help="Dataset path.")
+    argparser.add_argument('--num_constraints', '-nc', default=15, type=int, help="Number of constraints.")
+    argparser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Whether to use wandb",
+    )
+    argparser.add_argument(
+        "--project_name",
+        type=str,
+        default="airfoil-conditional-training",
+        help="Project name",
+    )
     args = argparser.parse_args()
     main(args)

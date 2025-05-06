@@ -19,7 +19,7 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.utils import find_parameters
 from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
-from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
 def render_fig(

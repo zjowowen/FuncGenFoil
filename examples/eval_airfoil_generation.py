@@ -1,124 +1,28 @@
-import datetime
 import argparse
-
 import os
-import torch.multiprocessing as mp
-
-
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
-
 import numpy as np
 import torch
-import torch.nn as nn
 
-from tensordict import TensorDict
 from torchrl.data import TensorDictReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data import SliceSamplerWithoutReplacement, SliceSampler, RandomSampler
 
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.state import AcceleratorState
 from accelerate.utils import set_seed
 
-import wandb
 from rich.progress import track
+from tqdm import tqdm
 from easydict import EasyDict
-from scipy.interpolate import splev, splprep
-from scipy.optimize import minimize
-from scipy import optimize
 
-from airfoil_generation.neural_networks.dit import PointDiT, PointDiTForGRL
 from airfoil_generation.dataset import Dataset, AF200KDataset
-from airfoil_generation.utils import vis_airfoil2, de_norm, cst_fit
-from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
+from airfoil_generation.dataset.parsec_direct_n11 import Fit_airfoil_11
 
 from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
-from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
-from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
+
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import linregress
-
-
-class Fit_airfoil_11:
-    '''
-    Fit airfoil by 3 order Bspline and extract Parsec features.
-    airfoil (npoints,2)
-    '''
-    def __init__(self,airfoil,iLE=128):
-        airfoil = airfoil[::((airfoil.shape[0]-1)//256)]
-        self.iLE = int((airfoil.shape[0] - 1) / 2)
-        self.tck, self.u = splprep(airfoil.T,s=0)
-
-        # parsec features
-        rle = self.get_rle()
-        xup, yup, yxxup = self.get_up()
-        xlo, ylo, yxxlo = self.get_lo()
-        yteup = airfoil[0,1]
-        ytelo = airfoil[-1,1]
-        alphate, betate = self.get_te_angle(airfoil)
-
-        self.parsec_features = np.array([rle,xup,yup,yxxup,xlo,ylo,yxxlo,
-                                         (yteup+ytelo)/2,yteup-ytelo,alphate,betate])
-
-    def get_rle(self):
-        uLE = self.u[self.iLE]
-        xu,yu = splev(uLE, self.tck,der=1) # dx/du
-        xuu,yuu = splev(uLE, self.tck,der=2) # ddx/du^2
-        K = abs(xu*yuu-xuu*yu)/(xu**2+yu**2)**1.5 # curvature
-        return 1/K
-    
-    def get_up(self):
-        def f(u_tmp):
-            x_tmp,y_tmp = splev(u_tmp, self.tck)
-            return -y_tmp
-        
-        res = optimize.minimize_scalar(f,bounds=(0,self.u[self.iLE]),method='bounded')
-        uup = res.x
-        xup ,yup = splev(uup, self.tck)
-
-        xu,yu = splev(uup, self.tck, der=1) # dx/du
-        xuu,yuu = splev(uup, self.tck, der=2) # ddx/du^2
-        # yx = yu/xu
-        yxx = (yuu*xu-xuu*yu)/xu**3
-        return xup, yup, yxx
-
-    def get_lo(self):
-        def f(u_tmp):
-            x_tmp,y_tmp = splev(u_tmp, self.tck)
-            return y_tmp
-        
-        res = optimize.minimize_scalar(f,bounds=(self.u[self.iLE],1),method='bounded')
-        ulo = res.x
-        xlo ,ylo = splev(ulo, self.tck)
-
-        xu,yu = splev(ulo, self.tck, der=1) # dx/du
-        xuu,yuu = splev(ulo, self.tck, der=2) # ddx/du^2
-        # yx = yu/xu
-        yxx = (yuu*xu-xuu*yu)/xu**3
-        return xlo, ylo, yxx
-
-    def get_te_angle(self, airfoil):
-        # xu,yu = splev(0, self.tck, der=1)
-        # yx = yu/xu
-        # alphate = np.arctan(yx)
-
-        # xu,yu = splev(1, self.tck, der=1)
-        # yx = yu/xu
-        # betate = np.arctan(yx)
-        # alphate = np.arctan((airfoil[0,1]-airfoil[1,1])/(airfoil[0,0]-airfoil[1,0]))
-        # betate = np.arctan((airfoil[-1,1]-airfoil[-2,1])/(airfoil[-1,0]-airfoil[-2,0]))
-
-        n = int(0.02*airfoil.shape[0])
-        k1 = linregress(airfoil[:n,0], airfoil[:n,1])[0]
-        k2 = linregress(airfoil[-n:,0], airfoil[-n:,1])[0]
-        alphate = np.arctan(k1)
-        betate = np.arctan(k2)
-        return alphate, betate
 
 def calculate_smoothness(airfoil):
     smoothness = 0.0
@@ -171,7 +75,7 @@ def cal_mean(arr):
 
 def main(args):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    accelerator = Accelerator(log_with=None, kwargs_handlers=[ddp_kwargs])
+    accelerator = Accelerator(log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs])
     device = accelerator.device
     state = AcceleratorState()
 
@@ -182,7 +86,7 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    project_name = "airfoil-evaluation"
+    project_name = args.project_name
     config = EasyDict(
         dict(
             device=device,
@@ -209,14 +113,14 @@ def main(args):
                         backbone=dict(
                             type="FourierNeuralOperator",
                             args=dict(
-                                modes=48,
+                                modes=64,
                                 vis_channels=1,
                                 hidden_channels=256,
                                 proj_channels=128,
                                 x_dim=1,
                                 t_scaling=1,
-                                n_layers=4,
-                                n_conditions=15,
+                                n_layers=6,
+                                n_conditions=args.num_constraints,
                             ),
                         ),
                     ),
@@ -246,10 +150,29 @@ def main(args):
         config.parameter.model_load_path
     ):
         # pop out _metadata key
-        state_dict = torch.load(config.parameter.model_load_path, map_location="cpu", weights_only=False)
+        state_dict = torch.load(
+            config.parameter.model_load_path,
+            map_location="cpu",
+            weights_only=False,
+        )
         state_dict.pop("_metadata", None)
-        flow_model.model.load_state_dict(state_dict)
 
+        # Create a new dictionary with updated keys
+        prefix = "_orig_mod."
+        new_state_dict = {}
+
+        for key, value in state_dict.items():
+            if key.startswith(prefix):
+                # Remove the prefix from the key
+                new_key = key[len(prefix) :]
+            else:
+                new_key = key
+            new_state_dict[new_key] = value
+
+        flow_model.model.load_state_dict(new_state_dict)
+        print(
+            f"Load model from {config.parameter.model_load_path} successfully!"
+        )
     flow_model.model = accelerator.prepare(flow_model.model)
 
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
@@ -260,6 +183,8 @@ def main(args):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
+        folder_path=args.data_path,
+        num_constraints=args.num_constraints,
     ) if args.dataset == 'supercritical' else (
         AF200KDataset(split="train")
     )
@@ -270,6 +195,8 @@ def main(args):
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
+        folder_path=args.data_path,
+        num_constraints=args.num_constraints,
     ) if args.dataset == 'supercritical' else (
         AF200KDataset(split="test")
     )
@@ -290,82 +217,100 @@ def main(args):
         prefetch=10,
     )
 
-    accelerator.init_trackers("airfoil-evaluation", config=None)
-    accelerator.print("✨ Start training ...")
+    accelerator.init_trackers(project_name, config=config)
+    accelerator.print("✨ Start evaluation ...")
 
     # breakpoint()
     flow_model.eval()
     resolution = config.flow_model.gaussian_process.dims[0]
     rs = [resolution]
     l = len(rs)
-    label_error = np.zeros((len(test_replay_buffer),l,11))
+    label_error = np.zeros((len(test_replay_buffer),l,args.num_constraints))
     smoothness = np.zeros((len(test_replay_buffer),l,))
     diversity = np.zeros((len(test_replay_buffer),l,))
 
-    with torch.no_grad():
-        for i, data in enumerate(test_replay_buffer):
-            data = data.to(device)
-            y = (data['params'][:,:] - train_dataset_mean[None,:]) / (train_dataset_std[None,:] + 1e-8)  # (b,15)
 
-            priors = []
-            for r in rs:
-                priors.append(flow_model.gaussian_process.sample(dims=[r], n_samples=20, n_channels=1))
+    for i in track(range(len(test_dataset.storage)), description="Evaluating", disable=not accelerator.is_local_main_process):
+        
+        data = test_replay_buffer.sample().to(device)
+        y = (data['params'][:,:] - train_dataset_mean[None,:]) / (train_dataset_std[None,:] + 1e-8)  # (b,15)
 
-            sample_trajectorys = []
-            for r, prior in zip(rs, priors):
-                sample_trajectorys.append(flow_model.sample_process(
-                    n_dims=[r],
-                    n_channels=1,
-                    t_span=torch.linspace(0.0, 1.0, 10),
-                    batch_size=1,
-                    x_0=prior,
-                    condition=y.repeat(20,1)
-                ))
+        priors = []
+        for r in rs:
+            priors.append(flow_model.gaussian_process.sample(dims=[r], n_samples=20, n_channels=1))
 
-            data_list_list = []
-            for sample_trajectory in sample_trajectorys:
-                data_list_list.append([
-                    x.squeeze(0).cpu().numpy() for x in torch.split(sample_trajectory, split_size_or_sections=1, dim=0)
-                ])
-            
-            label_error_ = np.zeros((l,11))
-            smoothness_ = np.zeros((l,))
+        sample_trajectorys = []
+        for r, prior in zip(rs, priors):
+            sample_trajectorys.append(flow_model.sample_process(
+                n_dims=[r],
+                n_channels=1,
+                t_span=torch.linspace(0.0, 1.0, 10),
+                batch_size=1,
+                x_0=prior,
+                condition=y.repeat(20,1),
+                with_grad=False,
+            ))
 
-            for j, data_list in enumerate(data_list_list):
-                data_list_ = []
-                airfoils = data_list[-1][0,:,0,:]
+        data_list_list = []
+        for sample_trajectory in sample_trajectorys:
+            data_list_list.append([
+                x.squeeze(0).detach().cpu().numpy() for x in torch.split(sample_trajectory, split_size_or_sections=1, dim=0)
+            ])
+        
+        label_error_ = np.zeros((l,args.num_constraints))
+        smoothness_ = np.zeros((l,))
 
-                for airfoil in airfoils:
-                    airfoil = (airfoil + 1) / 2 * (train_dataset.max.cpu().numpy()[1] - train_dataset.min.cpu().numpy()[1]) + train_dataset.min.cpu().numpy()[1]
-                    data_list_.append(airfoil)
-                    xs = (np.cos(np.linspace(0, 2*np.pi, airfoil.shape[-1])) + 1) / 2
+        for j, data_list in enumerate(data_list_list):
+            data_list_ = []
+            airfoils = data_list[-1][0,:,0,:]
+
+            for airfoil in airfoils:
+                airfoil = (airfoil + 1) / 2 * (train_dataset.max.cpu().numpy()[1] - train_dataset.min.cpu().numpy()[1]) + train_dataset.min.cpu().numpy()[1]
+                data_list_.append(airfoil)
+                xs = (np.cos(np.linspace(0, 2*np.pi, airfoil.shape[-1])) + 1) / 2
+                if args.num_constraints == 11:
                     parsec_params = Fit_airfoil_11(np.stack([xs,airfoil], axis=-1)).parsec_features
-                    label_error_[j] += np.abs(parsec_params - data['params'].reshape(-1).cpu().numpy())
-                    smoothness_[j] += calculate_smoothness(np.stack([xs,airfoil], axis=-1))
+                elif args.num_constraints == 15:
+                    parsec_params = Fit_airfoil_15(np.stack([xs,airfoil], axis=-1)).parsec_features
+                else:
+                    raise ValueError(f"num_constraints {args.num_constraints} not supported")
+                label_error_[j] += np.abs(parsec_params - data['params'].reshape(-1).cpu().numpy())
+                smoothness_[j] += calculate_smoothness(np.stack([xs,airfoil], axis=-1))
 
-                label_error_[j] /= len(airfoils)
-                smoothness_[j] /= len(airfoils)
-                label_error[i,j] = label_error_[j]
-                smoothness[i,j] = smoothness_[j]
-                data_list_ = np.array(data_list_)
-                diversity[i,j] = cal_diversity_score(data_list_)
-                print(np.mean(label_error[i,j]), label_error[i,j], smoothness[i,j], diversity[i,j])
+            label_error_[j] /= len(airfoils)
+            smoothness_[j] /= len(airfoils)
+            label_error[i,j] = label_error_[j]
+            smoothness[i,j] = smoothness_[j]
+            data_list_ = np.array(data_list_)
+            diversity[i,j] = cal_diversity_score(data_list_)
+            # print(np.mean(label_error[i,j]), label_error[i,j], smoothness[i,j], diversity[i,j])
 
-        np.save(f"output/{project_name}/label_error.npy", label_error)
-        np.save(f"output/{project_name}/smoothness.npy", smoothness)
-        np.save(f"output/{project_name}/diversity.npy", diversity)
+    np.save(f"output/{project_name}/label_error.npy", label_error)
+    np.save(f"output/{project_name}/smoothness.npy", smoothness)
+    np.save(f"output/{project_name}/diversity.npy", diversity)
 
-        for i, r in enumerate(rs):
-            print('Resolution: ', r)
-            for arr in label_error[:,i,:].T:
-                print(cal_mean(arr))
-            print(cal_mean(np.mean(label_error[:,i,:], axis=-1)))
-            print(cal_mean(smoothness[:,i]))
-            print(cal_mean(diversity[:,i]))
+    log_msg={}
+    for i, r in enumerate(rs):
+        print('Resolution: ', r)
+        index = 0
+        for arr in label_error[:,i,:].T:
+            index += 1
+            print(f"label error {index}: {cal_mean(arr)}")
+            log_msg[f"label error {i}-{index}"] = cal_mean(arr)
+        print(f"mean label error: {cal_mean(np.mean(label_error[:,i,:], axis=-1))}")
+        print(f"mean smoothness: {cal_mean(smoothness[:,i])}")
+        print(f"mean diversity: {cal_mean(diversity[:,i])}")
+        log_msg[f"mean label error {i}"] = cal_mean(np.mean(label_error[:,i,:], axis=-1))
+        log_msg[f"mean smoothness {i}"] = cal_mean(smoothness[:,i])
+        log_msg[f"mean diversity {i}"] = cal_mean(diversity[:,i])
 
-        accelerator.wait_for_everyone()
+    if args.wandb:
+        accelerator.log(log_msg, step=0)
 
-    accelerator.print("✨ Training complete!")
+
+    accelerator.wait_for_everyone()
+
+    accelerator.print("✨ Evaluation complete!")
     accelerator.end_training()
 
 
@@ -374,5 +319,18 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description='train_parser')
     argparser.add_argument('--dataset', '-d', default='supercritical', type=str, choices=['supercritical', 'af200k'], help="Choose a dataset.")
     argparser.add_argument('--model_path', '-p', type=str, help="Model load path.")
+    argparser.add_argument('--data_path', '-dp', default="data", type=str, help="Dataset path.")
+    argparser.add_argument('--num_constraints', '-nc', default=15, type=int, help="Number of constraints.")
+    argparser.add_argument(
+        "--wandb",
+        action="store_true",
+        help="Whether to use wandb",
+    )
+    argparser.add_argument(
+        "--project_name",
+        type=str,
+        default="airfoil-evaluation",
+        help="Project name",
+    )
     args = argparser.parse_args()
     main(args)

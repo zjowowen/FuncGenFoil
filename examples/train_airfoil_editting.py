@@ -18,7 +18,7 @@ from easydict import EasyDict
 import copy
 
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
-from airfoil_generation.dataset import Dataset
+from airfoil_generation.dataset import Dataset, AF200KDataset
 
 from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
@@ -54,7 +54,7 @@ def calculate_smoothness(airfoil):
     return smoothness
 
 
-def main():
+def main(args):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(log_with="wandb", kwargs_handlers=[ddp_kwargs])
     device = accelerator.device
@@ -186,7 +186,22 @@ def main():
         num_perturbed_airfoils=10,
         dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
         max_size=100000,
-    )
+    ) if args.dataset == "supercritical" else AF200KDataset(
+                split="train",
+                dataset_names=[
+                    "beziergan_gen",
+                    "cst_gen",
+                    "cst_gen_a",
+                    "cst_gen_b",
+                    "diffusion_gen",
+                    "interpolated_uiuc",
+                    "naca_gen",
+                    "supercritical_airfoil_af200k",
+                ] if len(args.dataset_names)==0 else args.dataset_names,
+                folder_path=args.data_path,
+                num_constraints=args.num_constraints,
+            )
+
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)

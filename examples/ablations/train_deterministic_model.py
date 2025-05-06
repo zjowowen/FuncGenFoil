@@ -1,5 +1,9 @@
+import datetime
+import argparse
+
 import os
 import torch.multiprocessing as mp
+
 
 import matplotlib
 
@@ -9,23 +13,29 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 import torch
+import torch.nn as nn
+
+from tensordict import TensorDict
 from torchrl.data import TensorDictReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.data import SliceSamplerWithoutReplacement, SliceSampler, RandomSampler
 
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.state import AcceleratorState
 from accelerate.utils import set_seed
 
+import wandb
 from rich.progress import track
 from easydict import EasyDict
 
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import Dataset, AF200KDataset
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 
-from airfoil_generation.model.optimal_transport_functional_flow_model import (
-    OptimalTransportFunctionalFlow,
-)
+from airfoil_generation.model.deterministic_model import FunctionalDeterministicModel
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
+from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
+from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
 
 
 def render_video_3x3(
@@ -37,8 +47,9 @@ def render_video_3x3(
     fps=100,
     dpi=100,
 ):
+
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
+        os.makedirs(video_save_path, exist_ok=True)
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
 
@@ -91,6 +102,8 @@ def render_video_3x3(
 
 def main(args):
 
+    # breakpoint()
+
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
@@ -112,33 +125,23 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
+                    length_scale=0.03,
+                    nu=2.5,
                     dims=[257],
-                ),
-                solver=dict(
-                    type="ODESolver",
-                    args=dict(
-                        library="torchdiffeq",
-                    ),
-                ),
-                path=dict(
-                    sigma=1e-4,
-                    device=device,
                 ),
                 model=dict(
                     type="velocity_function",
                     args=dict(
                         backbone=dict(
-                            type="FourierNeuralOperator",
+                            type="FourierNeuralOperatorDeterministic",
                             args=dict(
                                 modes=64,
                                 vis_channels=1,
                                 hidden_channels=256,
                                 proj_channels=128,
                                 x_dim=1,
-                                t_scaling=1,
                                 n_layers=6,
+                                n_conditions=args.num_constraints,
                             ),
                         ),
                     ),
@@ -153,7 +156,9 @@ def main(args):
                     if args.dataset == "supercritical"
                     else 200000 // 1024 * 2000
                 ),
-                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
+                warmup_steps=(
+                    2000 if args.dataset == "supercritical" else 20000 // 1024 * 2000
+                ),
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
@@ -172,7 +177,7 @@ def main(args):
         )
     )
 
-    flow_model = OptimalTransportFunctionalFlow(
+    flow_model = FunctionalDeterministicModel(
         config=config.flow_model,
     )
 
@@ -180,27 +185,9 @@ def main(args):
         config.parameter.model_load_path
     ):
         # pop out _metadata key
-        state_dict = torch.load(
-            config.parameter.model_load_path,
-            map_location="cpu",
-            weights_only=False,
-        )
+        state_dict = torch.load(config.parameter.model_load_path, map_location="cpu")
         state_dict.pop("_metadata", None)
-
-        # Create a new dictionary with updated keys
-        prefix = "_orig_mod."
-        new_state_dict = {}
-
-        for key, value in state_dict.items():
-            if key.startswith(prefix):
-                # Remove the prefix from the key
-                new_key = key[len(prefix) :]
-            else:
-                new_key = key
-            new_state_dict[new_key] = value
-
-        flow_model.model.load_state_dict(new_state_dict)
-        print(f"Load model from {config.parameter.model_load_path} successfully!")
+        flow_model.model.load_state_dict(state_dict)
 
     optimizer = torch.optim.Adam(
         flow_model.model.parameters(), lr=config.parameter.learning_rate
@@ -211,6 +198,7 @@ def main(args):
         T_max=config.parameter.iterations,
         eta_min=2e-6,
         warmup_steps=config.parameter.warmup_steps,
+        last_epoch=-1,
     )
 
     flow_model.model, optimizer = accelerator.prepare(flow_model.model, optimizer)
@@ -218,6 +206,7 @@ def main(args):
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
     batch_size = config.parameter.batch_size
+
     train_dataset = (
         Dataset(
             split="train",
@@ -232,6 +221,26 @@ def main(args):
         else (
             AF200KDataset(
                 split="train",
+                folder_path=args.data_path,
+                num_constraints=args.num_constraints,
+            )
+        )
+    )
+
+    test_dataset = (
+        Dataset(
+            split="test",
+            std_cst_augmentation=0.08,
+            num_perturbed_airfoils=10,
+            dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
+            max_size=100000,
+            folder_path=args.data_path,
+            num_constraints=args.num_constraints,
+        )
+        if args.dataset == "supercritical"
+        else (
+            AF200KDataset(
+                split="test",
                 dataset_names=[
                     "beziergan_gen",
                     "cst_gen",
@@ -248,6 +257,17 @@ def main(args):
         )
     )
 
+    # # save train_dataset_min and train_dataset_max using safetensors
+    # from safetensors.torch import save_file
+    # # Create a dictionary
+    # tensors_to_save = {
+    #     "train_dataset_min": train_dataset.min,
+    #     "train_dataset_max": train_dataset.max,
+    # }
+
+    # # Save using safetensors
+    # save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
+
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(
@@ -258,6 +278,16 @@ def main(args):
     train_dataset_std = train_dataset_std.to(device)
     train_dataset_mean = train_dataset_mean.to(device)
 
+    # # save train_dataset_mean and train_dataset_std using torch.save
+    # stats = {
+    #     "mean": train_dataset_mean,
+    #     "std": train_dataset_std,
+    # }
+    # torch.save(stats, f"output/{project_name}/mean_std.pt")
+    # # load train_dataset_min and train_dataset_max using safetensors
+    # stats = torch.load('mean_std.pt')
+    # train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
+
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()
 
@@ -266,6 +296,13 @@ def main(args):
         batch_size=batch_size,
         # sampler=RandomSampler(),
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=True),
+        prefetch=10,
+    )
+
+    test_replay_buffer = TensorDictReplayBuffer(
+        storage=test_dataset.storage,
+        batch_size=1,
+        sampler=SamplerWithoutReplacement(drop_last=False, shuffle=False),
         prefetch=10,
     )
 
@@ -284,6 +321,7 @@ def main(args):
         flow_model.train()
         with accelerator.autocast():
             with accelerator.accumulate(flow_model.model):
+
                 data = train_replay_buffer.sample()
                 data = data.to(device)
                 data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
@@ -291,23 +329,20 @@ def main(args):
                 ) * 2 - 1
 
                 gt = data["gt"][:, :, 1:2]  # (b,257,1)
-                y = (
-                    data["params"][:, :] - train_dataset_mean[None, :]
-                ) / train_dataset_std[
-                    None, :
-                ]  # (b,15)
-
+                y = (data["params"][:, :] - train_dataset_mean[None, :]) / (
+                    train_dataset_std[None, :] + 1e-8
+                )  # (b,15)
                 gt = gt.to(device).to(torch.float32)
                 y = y.to(device).to(torch.float32)
 
-                data = gt.reshape(-1, 1, 257)  # (b,1,257)
+                gt = gt.reshape(-1, 1, 257)  # (b,1,257)
                 gaussian_prior = flow_model.gaussian_process.sample_from_prior(
                     dims=config.flow_model.gaussian_process.dims,
-                    n_samples=data.shape[0],
-                    n_channels=data.shape[1],
+                    n_samples=gt.shape[0],
+                    n_channels=gt.shape[1],
                 )
-                loss = flow_model.functional_flow_matching_loss(
-                    x0=gaussian_prior, x1=data
+                loss = flow_model.optimal_transport_functional_flow_matching_loss(
+                    x0=gaussian_prior, x1=gt, condition=y
                 )
                 optimizer.zero_grad()
                 accelerator.backward(loss)
@@ -336,19 +371,26 @@ def main(args):
                     to_log,
                     step=iteration,
                 )
-            acc_train_loss = loss.mean().item()
-            print(
-                f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
-            )
+                acc_train_loss = loss.mean().item()
+                print(
+                    f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
+                )
 
         if iteration % config.parameter.eval_rate == 0:
+            # breakpoint()
             flow_model.eval()
             with torch.no_grad():
+                data = test_replay_buffer.sample()
+                data = data.to(device)
+                y = (data["params"][:, :] - train_dataset_mean[None, :]) / (
+                    train_dataset_std[None, :] + 1e-8
+                )  # (b,15)
                 sample_trajectory = flow_model.sample_process(
                     n_dims=config.flow_model.gaussian_process.dims,
                     n_channels=1,
-                    t_span=torch.linspace(0.0, 1.0, 100),
-                    batch_size=9,
+                    t_span=torch.linspace(0.0, 1.0, 1000),
+                    batch_size=1,
+                    condition=y.repeat(10, 1),
                 )
                 # sample_trajectory is of shape (T, B, C, D)
 
@@ -406,6 +448,12 @@ if __name__ == "__main__":
         help="Choose a dataset.",
     )
     argparser.add_argument(
+        "--dataset_names",
+        type=lambda s: s.split(","),
+        default=[],
+        help="Type of the data to be used, default is all the data in the dataset.",
+    )
+    argparser.add_argument(
         "--data_path", "-dp", default="data", type=str, help="Dataset path."
     )
     argparser.add_argument(
@@ -419,9 +467,8 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--project_name",
         type=str,
-        default="airfoil-unconditional-training",
+        default="airfoil-conditional-training",
         help="Project name",
     )
-
     args = argparser.parse_args()
     main(args)

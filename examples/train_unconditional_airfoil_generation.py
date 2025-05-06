@@ -132,13 +132,13 @@ def main(args):
                         backbone=dict(
                             type="FourierNeuralOperator",
                             args=dict(
-                                modes=32,
+                                modes=64,
                                 vis_channels=1,
                                 hidden_channels=256,
                                 proj_channels=128,
                                 x_dim=1,
                                 t_scaling=1,
-                                n_layers=4,
+                                n_layers=6,
                             ),
                         ),
                     ),

@@ -22,6 +22,7 @@ from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
 from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
+
 def render_fig(
     xs,
     ys,
@@ -82,8 +83,8 @@ def render_fig(
         margin=dict(l=0, r=0, t=0, b=0),
     )
 
-
     return fig, xs, ys
+
 
 def init_unconditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
@@ -120,6 +121,7 @@ def init_unconditional_flow_model(config, device):
 
     return flow_model
 
+
 def init_conditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
         config=config.conditional_flow_model
@@ -154,6 +156,7 @@ def init_conditional_flow_model(config, device):
     print("Model loaded from: ", config.parameter.conditional_model_load_path)
 
     return flow_model
+
 
 if __name__ == "__main__":
 
@@ -355,9 +358,12 @@ if __name__ == "__main__":
         ]
         curve_json = json.dumps(curve_data, indent=2)
         print(airfoil_generated_normed.cpu().numpy().shape)
-        return fig, curve_json, airfoil_generated_normed.squeeze().cpu().numpy(), prior_x
-
-
+        return (
+            fig,
+            curve_json,
+            airfoil_generated_normed.squeeze().cpu().numpy(),
+            prior_x,
+        )
 
     def generate_editing_airfoil_curve(
         resolution,
@@ -373,7 +379,9 @@ if __name__ == "__main__":
 
         t_span = torch.linspace(0.0, 1.0, t_steps).to(device)
         airfoil_for_editing_normed = (
-            torch.tensor(airfoil_for_editing_numpy, device=device).unsqueeze(0).unsqueeze(0)
+            torch.tensor(airfoil_for_editing_numpy, device=device)
+            .unsqueeze(0)
+            .unsqueeze(0)
         )
 
         if latent_initialization == "Random latent function initialization":
@@ -499,8 +507,6 @@ if __name__ == "__main__":
 
             return fig, curve_json, airfoil_for_editing_sampled.squeeze().cpu().numpy()
 
-
-
     def generate_constraints(
         resolution: int,
         random_scale: float = 0.0,
@@ -580,7 +586,9 @@ if __name__ == "__main__":
             y_max = constraint["y_max"]
             delta = constraint["delta"]
             points_id_constraints_for_editing_list.append(
-                np.where((xs >= x_min) & (xs <= x_max) & (ys >= y_min) & (ys <= y_max))[0]
+                np.where((xs >= x_min) & (xs <= x_max) & (ys >= y_min) & (ys <= y_max))[
+                    0
+                ]
             )
             delta_list.append(delta)
 
@@ -590,7 +598,9 @@ if __name__ == "__main__":
 
         # Sample noise
         noise_pattern = (
-            gp.sample(dims=[resolution], n_samples=1, n_channels=1).squeeze(0).to(device)
+            gp.sample(dims=[resolution], n_samples=1, n_channels=1)
+            .squeeze(0)
+            .to(device)
         )
         noise_pattern_copy = noise_pattern.clone()
         noise_pattern.fill_(0)
@@ -650,14 +660,15 @@ if __name__ == "__main__":
             ys_controlled_edited,
         )
 
-
     # For an example, let's set the resolution to 257 and seed to 42
     resolution = 257
     seed = 42
     prior_x = None
     select_last_prior = False
 
-    plot_1, text_1, airfoil_for_editing, prior_x = generate_airfoil_curve(resolution, seed, prior_x, select_last_prior)
+    plot_1, text_1, airfoil_for_editing, prior_x = generate_airfoil_curve(
+        resolution, seed, prior_x, select_last_prior
+    )
 
     # plot_1.show()
 
@@ -669,28 +680,30 @@ if __name__ == "__main__":
     random_scale = 0.000003
     random_points_number = 5
     control_points_range = '[{"x_min": -0.1, "x_max": 0.2, "y_min": -0.5, "y_max": 0.5, "delta": 0.000003}, {"x_min": 0.3, "x_max": 0.5, "y_min": -0.5, "y_max": 0.0, "delta": 0.000003}]'
-    
+
     (
         plot_2,
         text_2,
         points_id_constraints_for_editing_all,
         xs_controlled,
         ys_controlled,
-        ys_controlled_edited
+        ys_controlled_edited,
     ) = generate_constraints(
-            resolution,
-            random_scale,
-            random_points_number,
-            control_points_range,
-            airfoil_for_editing,
+        resolution,
+        random_scale,
+        random_points_number,
+        control_points_range,
+        airfoil_for_editing,
     )
 
     # plot_2.show()
-    print("points_id_constraints_for_editing_all output :", points_id_constraints_for_editing_all)
+    print(
+        "points_id_constraints_for_editing_all output :",
+        points_id_constraints_for_editing_all,
+    )
     print("xs_controlled output :", xs_controlled.shape)
     print("ys_controlled output :", ys_controlled.shape)
     print("ys_controlled_edited output :", ys_controlled_edited.shape)
-
 
     # Now we can edit the airfoil curve using the generated constraints
     finetune_iterations = 20
@@ -706,7 +719,7 @@ if __name__ == "__main__":
         ys_controlled,
         ys_controlled_edited,
         t_steps,
-        latent_initialization
+        latent_initialization,
     )
 
     # plot_3.show()

@@ -2,6 +2,7 @@ import os
 import torch.multiprocessing as mp
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -25,6 +26,7 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
+
 
 def render_video_3x3(
     data_list,
@@ -86,17 +88,20 @@ def render_video_3x3(
     plt.clf()
     print(f"Saved video to {save_path}")
 
+
 def main(args):
-    
+
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
-    accelerator = Accelerator(log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs])
+    accelerator = Accelerator(
+        log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
+    )
     device = accelerator.device
     state = AcceleratorState()
 
     # Get the process rank
     process_rank = state.process_index
 
-    set_seed(seed=42+process_rank)
+    set_seed(seed=42 + process_rank)
 
     print(f"Process rank: {process_rank}")
 
@@ -140,14 +145,26 @@ def main(args):
                 ),
             ),
             parameter=dict(
-                train_samples=20000 if args.dataset == 'supercritical' else 200000,
+                train_samples=20000 if args.dataset == "supercritical" else 200000,
                 batch_size=1024,
                 learning_rate=5e-5 * accelerator.num_processes,
-                iterations=20000 // 1024 * 2000 if args.dataset == 'supercritical' else 200000 // 1024 * 2000,
-                warmup_steps=2000 if args.dataset == 'supercritical' else 20000,
+                iterations=(
+                    20000 // 1024 * 2000
+                    if args.dataset == "supercritical"
+                    else 200000 // 1024 * 2000
+                ),
+                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
                 log_rate=100,
-                eval_rate=20000 // 1024 * 500 if args.dataset == 'supercritical' else 200000 // 1024 * 500,
-                checkpoint_rate=20000 // 1024 * 500 if args.dataset == 'supercritical' else 200000 // 1024 * 500,
+                eval_rate=(
+                    20000 // 1024 * 500
+                    if args.dataset == "supercritical"
+                    else 200000 // 1024 * 500
+                ),
+                checkpoint_rate=(
+                    20000 // 1024 * 500
+                    if args.dataset == "supercritical"
+                    else 200000 // 1024 * 500
+                ),
                 video_save_path=f"output/{project_name}/videos",
                 model_save_path=f"output/{project_name}/models",
                 model_load_path=None,
@@ -183,9 +200,7 @@ def main(args):
             new_state_dict[new_key] = value
 
         flow_model.model.load_state_dict(new_state_dict)
-        print(
-            f"Load model from {config.parameter.model_load_path} successfully!"
-        )
+        print(f"Load model from {config.parameter.model_load_path} successfully!")
 
     optimizer = torch.optim.Adam(
         flow_model.model.parameters(), lr=config.parameter.learning_rate
@@ -203,25 +218,33 @@ def main(args):
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
     batch_size = config.parameter.batch_size
-    train_dataset = Dataset(
-        split="train",
-        std_cst_augmentation=0.08,
-        num_perturbed_airfoils=10,
-        dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-        max_size=100000,
-        folder_path=args.data_path,
-        num_constraints=args.num_constraints,
-    ) if args.dataset == 'supercritical' else (
-        AF200KDataset(
+    train_dataset = (
+        Dataset(
             split="train",
+            std_cst_augmentation=0.08,
+            num_perturbed_airfoils=10,
+            dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
+            max_size=100000,
             folder_path=args.data_path,
             num_constraints=args.num_constraints,
+        )
+        if args.dataset == "supercritical"
+        else (
+            AF200KDataset(
+                split="train",
+                folder_path=args.data_path,
+                num_constraints=args.num_constraints,
             )
+        )
     )
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
-    train_dataset_std = torch.where(torch.isnan(train_dataset_std) | torch.isinf(train_dataset_std), torch.tensor(0.0), train_dataset_std)
+    train_dataset_std = torch.where(
+        torch.isnan(train_dataset_std) | torch.isinf(train_dataset_std),
+        torch.tensor(0.0),
+        train_dataset_std,
+    )
     train_dataset_std = train_dataset_std.to(device)
     train_dataset_mean = train_dataset_mean.to(device)
 
@@ -286,12 +309,12 @@ def main(args):
         if iteration % config.parameter.log_rate == 0:
             if accelerator.is_local_main_process:
                 to_log = {
-                        "loss/mean": loss.mean().item(),
-                        "iteration": iteration,
-                        "epoch": iteration // iteration_per_epoch,
-                        "lr": scheduler.get_last_lr()[0],
-                    }
-                
+                    "loss/mean": loss.mean().item(),
+                    "iteration": iteration,
+                    "epoch": iteration // iteration_per_epoch,
+                    "lr": scheduler.get_last_lr()[0],
+                }
+
                 if len(loss.shape) == 0:
                     to_log["loss/std"] = 0
                     to_log["loss/0"] = loss.item()
@@ -362,10 +385,22 @@ def main(args):
 
 if __name__ == "__main__":
     import argparse
-    argparser = argparse.ArgumentParser(description='train_parser')
-    argparser.add_argument('--dataset', '-d', default='supercritical', type=str, choices=['supercritical', 'af200k'], help="Choose a dataset.")
-    argparser.add_argument('--data_path', '-dp', default="data", type=str, help="Dataset path.")
-    argparser.add_argument('--num_constraints', '-nc', default=15, type=int, help="Number of constraints.")
+
+    argparser = argparse.ArgumentParser(description="train_parser")
+    argparser.add_argument(
+        "--dataset",
+        "-d",
+        default="supercritical",
+        type=str,
+        choices=["supercritical", "af200k"],
+        help="Choose a dataset.",
+    )
+    argparser.add_argument(
+        "--data_path", "-dp", default="data", type=str, help="Dataset path."
+    )
+    argparser.add_argument(
+        "--num_constraints", "-nc", default=15, type=int, help="Number of constraints."
+    )
     argparser.add_argument(
         "--wandb",
         action="store_true",

@@ -22,6 +22,7 @@ from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
 from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
+
 def render_fig(
     xs,
     ys,
@@ -82,8 +83,8 @@ def render_fig(
         margin=dict(l=0, r=0, t=0, b=0),
     )
 
-
     return fig, xs, ys
+
 
 def init_unconditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
@@ -120,6 +121,7 @@ def init_unconditional_flow_model(config, device):
 
     return flow_model
 
+
 def init_conditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
         config=config.conditional_flow_model
@@ -154,6 +156,7 @@ def init_conditional_flow_model(config, device):
     print("Model loaded from: ", config.parameter.conditional_model_load_path)
 
     return flow_model
+
 
 if __name__ == "__main__":
 
@@ -289,9 +292,6 @@ if __name__ == "__main__":
     unconditional_flow_model = init_unconditional_flow_model(config, device)
     conditional_flow_model = init_conditional_flow_model(config, device)
 
-
-
-
     def generate_airfoil_curve(
         resolution, seed=None, prior_x=None, select_last_prior=False
     ):
@@ -358,7 +358,12 @@ if __name__ == "__main__":
         ]
         curve_json = json.dumps(curve_data, indent=2)
         print(airfoil_generated_normed.cpu().numpy().shape)
-        return fig, curve_json, airfoil_generated_normed.squeeze().cpu().numpy(), prior_x
+        return (
+            fig,
+            curve_json,
+            airfoil_generated_normed.squeeze().cpu().numpy(),
+            prior_x,
+        )
 
     # For an example, let's set the resolution to 257 and seed to 42
     resolution = 257
@@ -366,10 +371,11 @@ if __name__ == "__main__":
     prior_x = None
     select_last_prior = False
 
-    plot_1, text_1, airfoil_for_editing, prior_x = generate_airfoil_curve(resolution, seed, prior_x, select_last_prior)
+    plot_1, text_1, airfoil_for_editing, prior_x = generate_airfoil_curve(
+        resolution, seed, prior_x, select_last_prior
+    )
 
     # plot_1.show()
 
     print("airfoil output :", airfoil_for_editing.shape)
     print("prior_x output :", prior_x.shape)
-

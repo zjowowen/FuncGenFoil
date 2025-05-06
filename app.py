@@ -1182,7 +1182,9 @@ with gr.Blocks() as demo:
     btn_conditional = gr.Button("Generate airfoil with geometry constraints")
     with gr.Row():
         logp_x = gr.Number(value=None, label="Log probability of generated airfoil")
-        finetune_iterations_for_geometry = gr.Number(value=20, label="Finetune iterations [5~1000]")
+        finetune_iterations_for_geometry = gr.Number(
+            value=20, label="Finetune iterations [5~1000]"
+        )
         t_steps_for_finetune = gr.Number(value=1000, label="t steps [10~1000]")
     btn_conditional_ft = gr.Button(
         "Generate airfoil with geometry constraints with finetuning"

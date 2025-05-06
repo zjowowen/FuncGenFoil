@@ -41,7 +41,10 @@ class Dataset(torch.utils.data.Dataset):
         for dataset_name in dataset_names:
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
+                    folder_path,
+                    dataset_name,
+                    f"{dataset_name}_parsec_params_{self.num_constraints}.txt",
+                )
             ) as f:
 
                 for line in f.readlines():
@@ -52,13 +55,14 @@ class Dataset(torch.utils.data.Dataset):
 
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt"
+                )
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
+                os.path.join(folder_path, dataset_name, f"{dataset_name}_airfoils.h5"),
+                "r",
             ) as f:
                 for key in temp_key_list:
                     temp_data = torch.from_numpy(f[key][:])
@@ -114,8 +118,6 @@ class Dataset(torch.utils.data.Dataset):
         return self.len
 
 
-
-
 class PointCloudDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -147,7 +149,10 @@ class PointCloudDataset(torch.utils.data.Dataset):
         for dataset_name in dataset_names:
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
+                    folder_path,
+                    dataset_name,
+                    f"{dataset_name}_parsec_params_{self.num_constraints}.txt",
+                )
             ) as f:
                 for line in f.readlines():
                     name_params = line.strip().split(",")
@@ -157,13 +162,14 @@ class PointCloudDataset(torch.utils.data.Dataset):
 
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt"
+                )
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
+                os.path.join(folder_path, dataset_name, f"{dataset_name}_airfoils.h5"),
+                "r",
             ) as f:
 
                 for key in temp_key_list:
@@ -322,7 +328,10 @@ class AF200KDataset(torch.utils.data.Dataset):
 
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_parsec_params_{self.num_constraints}.txt")
+                    folder_path,
+                    dataset_name,
+                    f"{dataset_name}_parsec_params_{self.num_constraints}.txt",
+                )
             ) as f:
                 for line in f.readlines():
                     name_params = line.strip().split(",")
@@ -332,13 +341,14 @@ class AF200KDataset(torch.utils.data.Dataset):
 
             with open(
                 os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt")
+                    folder_path, dataset_name, f"{dataset_name}_{self.split}.txt"
+                )
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
             with h5py.File(
-                os.path.join(
-                    folder_path, dataset_name, f"{dataset_name}_airfoils.h5"), "r"
+                os.path.join(folder_path, dataset_name, f"{dataset_name}_airfoils.h5"),
+                "r",
             ) as f:
                 for key in temp_key_list:
                     temp_data = torch.from_numpy(f[key][:])

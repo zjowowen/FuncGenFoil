@@ -53,6 +53,7 @@ def calculate_smoothness(airfoil):
 
     return smoothness
 
+
 def main():
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(log_with="wandb", kwargs_handlers=[ddp_kwargs])
@@ -151,7 +152,7 @@ def main():
                 model_save_path=f"output/{project_name}/models",
                 model_load_path=f"output/generation/models/model_700000.pth",
                 dataset_for_edit_path=f"data/dataset_for_editing.pth",
-                edit_scale_sqrt=0.0001, # 0.0001, 0.0002, 0.0004
+                edit_scale_sqrt=0.0001,  # 0.0001, 0.0002, 0.0004
             ),
         )
     )
@@ -371,6 +372,7 @@ def main():
     print(
         f"mse_tensor mean: {mse_tensor.mean().item()}, smooth_tensor mean: {smooth_tensor.mean().item()}"
     )
+
 
 if __name__ == "__main__":
     main()

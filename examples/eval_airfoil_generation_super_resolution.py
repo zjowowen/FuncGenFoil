@@ -19,6 +19,7 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
 
+
 def render_last_fig_3x3_super_resolution(
     data_list,
     resolution,
@@ -83,6 +84,7 @@ def render_last_fig_3x3_super_resolution(
     plt.clf()
     print(f"Saved image to {save_path}")
 
+
 def render_last_fig_3x3_super_resolution_all(
     data_list,
     resolution,
@@ -145,6 +147,7 @@ def render_last_fig_3x3_super_resolution_all(
     plt.close(fig)
     plt.clf()
     print(f"Saved image to {save_path}")
+
 
 def main():
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
@@ -419,6 +422,7 @@ def main():
                 train_dataset.max.cpu().numpy(),
                 train_dataset.min.cpu().numpy(),
             )
+
 
 if __name__ == "__main__":
     main()

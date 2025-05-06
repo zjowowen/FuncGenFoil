@@ -22,6 +22,7 @@ from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
 from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
+
 def render_fig(
     xs,
     ys,
@@ -82,8 +83,8 @@ def render_fig(
         margin=dict(l=0, r=0, t=0, b=0),
     )
 
-
     return fig, xs, ys
+
 
 def init_unconditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
@@ -120,6 +121,7 @@ def init_unconditional_flow_model(config, device):
 
     return flow_model
 
+
 def init_conditional_flow_model(config, device):
     flow_model = OptimalTransportFunctionalFlow(
         config=config.conditional_flow_model
@@ -154,6 +156,7 @@ def init_conditional_flow_model(config, device):
     print("Model loaded from: ", config.parameter.conditional_model_load_path)
 
     return flow_model
+
 
 if __name__ == "__main__":
 
@@ -289,7 +292,6 @@ if __name__ == "__main__":
     unconditional_flow_model = init_unconditional_flow_model(config, device)
     conditional_flow_model = init_conditional_flow_model(config, device)
 
-
     def generate_airfoil_from_geometry_params(resolution, *args):
         prior_x = conditional_flow_model.gaussian_process.sample(
             dims=[resolution], n_samples=1, n_channels=1
@@ -372,7 +374,6 @@ if __name__ == "__main__":
             logp_x.item(),
         )
 
-
     # For an example, let's set the resolution to 257 and other parameters
 
     resolution = 257
@@ -392,46 +393,48 @@ if __name__ == "__main__":
     t60u = 0.068
     t60l = -0.036
 
-    (plot_conditional,
-            text_conditional,
-            airfoil_for_editing,
-            rf_real,
-            t4u_real,
-            t4l_real,
-            xumax_real,
-            yumax_real,
-            xlmax_real,
-            ylmax_real,
-            t25u_real,
-            t25l_real,
-            angle_real,
-            te1_real,
-            xr_real,
-            yr_real,
-            t60u_real,
-            t60l_real,
-            logp_x,) = generate_airfoil_from_geometry_params(
-                resolution,
-                rf,
-                t4u,
-                t4l,
-                xumax,
-                yumax,
-                xlmax,
-                ylmax,
-                t25u,
-                t25l,
-                angle,
-                te1,
-                xr,
-                yr,
-                t60u,
-                t60l,
-            )
+    (
+        plot_conditional,
+        text_conditional,
+        airfoil_for_editing,
+        rf_real,
+        t4u_real,
+        t4l_real,
+        xumax_real,
+        yumax_real,
+        xlmax_real,
+        ylmax_real,
+        t25u_real,
+        t25l_real,
+        angle_real,
+        te1_real,
+        xr_real,
+        yr_real,
+        t60u_real,
+        t60l_real,
+        logp_x,
+    ) = generate_airfoil_from_geometry_params(
+        resolution,
+        rf,
+        t4u,
+        t4l,
+        xumax,
+        yumax,
+        xlmax,
+        ylmax,
+        t25u,
+        t25l,
+        angle,
+        te1,
+        xr,
+        yr,
+        t60u,
+        t60l,
+    )
 
     # plot_conditional.show()
     print("airfoil output :", airfoil_for_editing.shape)
-    # geometry parameters recomputed for the generated airfoil 
+    # geometry parameters recomputed for the generated airfoil
     print("rf_real output :", rf_real)
     print("t4u_real output :", t4u_real)
     print("t4l_real output :", t4l_real)

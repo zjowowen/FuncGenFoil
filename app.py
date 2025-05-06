@@ -506,7 +506,7 @@ def generate_editing_airfoil_curve(
         return fig, curve_json
 
 
-def generate_airfoil_from_physical_params(resolution, *args):
+def generate_airfoil_from_geometry_params(resolution, *args):
     prior_x = conditional_flow_model.gaussian_process.sample(
         dims=[resolution], n_samples=1, n_channels=1
     )
@@ -589,7 +589,7 @@ def generate_airfoil_from_physical_params(resolution, *args):
     )
 
 
-def generate_airfoil_from_physical_params_with_finetuning(
+def generate_airfoil_from_geometry_params_with_finetuning(
     resolution,
     rf,
     t4u,
@@ -606,7 +606,7 @@ def generate_airfoil_from_physical_params_with_finetuning(
     yr,
     t60u,
     t60l,
-    finetune_iterations=10,
+    finetune_iterations=20,
     t_steps=1000,
     latent_initialization="Inverse prior initialization",
     progress=gr.Progress(),
@@ -803,7 +803,7 @@ def generate_airfoil_from_physical_params_with_finetuning(
                     ** 2
                 )
             )
-            / 0.001
+            / 0.0001
         )
         loss_2 = -logp_1_repeat.mean()
 
@@ -1078,7 +1078,7 @@ with gr.Blocks() as demo:
 
     gr.Markdown("## Airfoil Generation (Conditional)")
 
-    gr.Markdown("### Input physical parameters for conditional generation")
+    gr.Markdown("### Input geometry parameters for conditional generation")
 
     with gr.Row():
         rf = gr.Number(value=0.01, label="Leading edge radius (Design)")
@@ -1179,11 +1179,13 @@ with gr.Blocks() as demo:
             value=None, label="Lower surface thickness at 60% chord length (Generated)"
         )
 
-    btn_conditional = gr.Button("Generate airfoil with physical constraints")
+    btn_conditional = gr.Button("Generate airfoil with geometry constraints")
     with gr.Row():
         logp_x = gr.Number(value=None, label="Log probability of generated airfoil")
+        finetune_iterations_for_geometry = gr.Number(value=20, label="Finetune iterations [5~1000]")
+        t_steps_for_finetune = gr.Number(value=1000, label="t steps [10~1000]")
     btn_conditional_ft = gr.Button(
-        "Generate airfoil with physical constraints with finetuning"
+        "Generate airfoil with geometry constraints with finetuning"
     )
     with gr.Row():
         logp_x_ft = gr.Number(
@@ -1248,7 +1250,7 @@ with gr.Blocks() as demo:
     )
 
     btn_conditional.click(
-        generate_airfoil_from_physical_params,
+        generate_airfoil_from_geometry_params,
         inputs=[
             resolution,
             rf,
@@ -1291,7 +1293,7 @@ with gr.Blocks() as demo:
     )
 
     btn_conditional_ft.click(
-        generate_airfoil_from_physical_params_with_finetuning,
+        generate_airfoil_from_geometry_params_with_finetuning,
         inputs=[
             resolution,
             rf,
@@ -1309,6 +1311,8 @@ with gr.Blocks() as demo:
             yr,
             t60u,
             t60l,
+            finetune_iterations_for_geometry,
+            t_steps_for_finetune,
         ],
         outputs=[
             plot_conditional,

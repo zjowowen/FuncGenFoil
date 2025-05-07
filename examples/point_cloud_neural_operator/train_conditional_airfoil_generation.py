@@ -1,9 +1,5 @@
-import datetime
-import argparse
-
 import os
 import torch.multiprocessing as mp
-
 
 import matplotlib
 
@@ -13,29 +9,27 @@ import matplotlib.pyplot as plt
 
 import numpy as np
 import torch
-import torch.nn as nn
-
-from tensordict import TensorDict
 from torchrl.data import TensorDictReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data import SliceSamplerWithoutReplacement, SliceSampler, RandomSampler
 
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.state import AcceleratorState
 from accelerate.utils import set_seed
 
-import wandb
 from rich.progress import track
 from easydict import EasyDict
 
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import Dataset, AF200KDataset
-from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 
-from airfoil_generation.model.deterministic_model import FunctionalDeterministicModel
+from airfoil_generation.model.optimal_transport_functional_flow_model import (
+    OptimalTransportFunctionalFlow,
+)
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
-from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
-from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
+
+from airfoil_generation.neural_networks.point_cloud_neural_operator import (
+    compute_Fourier_modes,
+)
 
 
 def render_video_3x3(
@@ -47,9 +41,8 @@ def render_video_3x3(
     fps=100,
     dpi=100,
 ):
-
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path, exist_ok=True)
+        os.makedirs(video_save_path)
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
 
@@ -102,8 +95,6 @@ def render_video_3x3(
 
 def main(args):
 
-    # breakpoint()
-
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
@@ -118,6 +109,12 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
+    ndims = 1
+    kx_max = 64
+    Lx = 1.0
+    modes = compute_Fourier_modes(ndims, [kx_max], [Lx])
+    modes = torch.tensor(modes, dtype=torch.float).to(device)
+
     project_name = args.project_name
     config = EasyDict(
         dict(
@@ -125,29 +122,42 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
+                    length_scale=0.01,
+                    nu=1.5,
                     dims=[257],
+                ),
+                solver=dict(
+                    type="ODESolver",
+                    args=dict(
+                        library="torchdiffeq",
+                    ),
+                ),
+                path=dict(
+                    sigma=1e-4,
+                    device=device,
                 ),
                 model=dict(
                     type="velocity_function",
                     args=dict(
                         backbone=dict(
-                            type="FourierNeuralOperatorDeterministic",
+                            type="PointCloudNeuralOperator",
                             args=dict(
-                                modes=64,
-                                vis_channels=1,
-                                hidden_channels=256,
-                                proj_channels=128,
-                                x_dim=1,
-                                n_layers=6,
-                                n_conditions=args.num_constraints,
+                                ndims=ndims,
+                                modes=modes,
+                                nmeasures=1,
+                                layers=[256, 256, 256, 256, 256, 256],
+                                fc_dim=128,
+                                in_dim=4 + args.num_constraints,
+                                out_dim=1,
+                                train_sp_L="independently",
+                                act="gelu",
                             ),
                         ),
                     ),
                 ),
             ),
             parameter=dict(
+                equal_weights=args.equal_weights,
                 train_samples=20000 if args.dataset == "supercritical" else 200000,
                 batch_size=1024,
                 learning_rate=5e-5 * accelerator.num_processes,
@@ -156,9 +166,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else 200000 // 1024 * 2000
                 ),
-                warmup_steps=(
-                    2000 if args.dataset == "supercritical" else 20000 // 1024 * 2000
-                ),
+                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
@@ -177,7 +185,7 @@ def main(args):
         )
     )
 
-    flow_model = FunctionalDeterministicModel(
+    flow_model = OptimalTransportFunctionalFlow(
         config=config.flow_model,
     )
 
@@ -185,9 +193,27 @@ def main(args):
         config.parameter.model_load_path
     ):
         # pop out _metadata key
-        state_dict = torch.load(config.parameter.model_load_path, map_location="cpu")
+        state_dict = torch.load(
+            config.parameter.model_load_path,
+            map_location="cpu",
+            weights_only=False,
+        )
         state_dict.pop("_metadata", None)
-        flow_model.model.load_state_dict(state_dict)
+
+        # Create a new dictionary with updated keys
+        prefix = "_orig_mod."
+        new_state_dict = {}
+
+        for key, value in state_dict.items():
+            if key.startswith(prefix):
+                # Remove the prefix from the key
+                new_key = key[len(prefix) :]
+            else:
+                new_key = key
+            new_state_dict[new_key] = value
+
+        flow_model.model.load_state_dict(new_state_dict)
+        print(f"Load model from {config.parameter.model_load_path} successfully!")
 
     optimizer = torch.optim.Adam(
         flow_model.model.parameters(), lr=config.parameter.learning_rate
@@ -198,7 +224,6 @@ def main(args):
         T_max=config.parameter.iterations,
         eta_min=2e-6,
         warmup_steps=config.parameter.warmup_steps,
-        last_epoch=-1,
     )
 
     flow_model.model, optimizer = accelerator.prepare(flow_model.model, optimizer)
@@ -206,7 +231,6 @@ def main(args):
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
     batch_size = config.parameter.batch_size
-
     train_dataset = (
         Dataset(
             split="train",
@@ -221,6 +245,20 @@ def main(args):
         else (
             AF200KDataset(
                 split="train",
+                dataset_names=(
+                    [
+                        "beziergan_gen",
+                        "cst_gen",
+                        "cst_gen_a",
+                        "cst_gen_b",
+                        "diffusion_gen",
+                        "interpolated_uiuc",
+                        "naca_gen",
+                        "supercritical_airfoil_af200k",
+                    ]
+                    if len(args.dataset_names) == 0
+                    else args.dataset_names
+                ),
                 folder_path=args.data_path,
                 num_constraints=args.num_constraints,
             )
@@ -261,17 +299,6 @@ def main(args):
         )
     )
 
-    # # save train_dataset_min and train_dataset_max using safetensors
-    # from safetensors.torch import save_file
-    # # Create a dictionary
-    # tensors_to_save = {
-    #     "train_dataset_min": train_dataset.min,
-    #     "train_dataset_max": train_dataset.max,
-    # }
-
-    # # Save using safetensors
-    # save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
-
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(
@@ -282,21 +309,119 @@ def main(args):
     train_dataset_std = train_dataset_std.to(device)
     train_dataset_mean = train_dataset_mean.to(device)
 
-    # # save train_dataset_mean and train_dataset_std using torch.save
-    # stats = {
-    #     "mean": train_dataset_mean,
-    #     "std": train_dataset_std,
-    # }
-    # torch.save(stats, f"output/{project_name}/mean_std.pt")
-    # # load train_dataset_min and train_dataset_max using safetensors
-    # stats = torch.load('mean_std.pt')
-    # train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
-
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()
 
+    from airfoil_generation.dataset.point_cloud_data_preprocess import (
+        convert_structured_data_1D,
+        preprocess_data,
+        compute_node_weights,
+        data_preparition_with_tensordict,
+    )
+
+    if args.preprocess_data and accelerator.is_local_main_process:
+
+        def preprocess(dataset, file_name="pcno_data.npz"):
+            coordx = np.linspace(0, 2 * np.pi, 257)[None, :].repeat(
+                len(dataset), axis=0
+            )  # of shape (b,257)
+            features = (
+                dataset.storage["gt"].cpu().numpy()[:, :, 1:2]
+            )  # of shape (b,257,1)
+
+            nodes_list, elems_list, features_list = convert_structured_data_1D(
+                [
+                    coordx,
+                ],
+                features,
+                nnodes_per_elem=2,
+                feature_include_coords=False,
+            )
+
+            (
+                nnodes,
+                node_mask,
+                nodes,
+                node_measures_raw,
+                features,
+                directed_edges,
+                edge_gradient_weights,
+            ) = preprocess_data(nodes_list, elems_list, features_list)
+            node_measures, node_weights = compute_node_weights(
+                nnodes, node_measures_raw, equal_measure=False
+            )
+            node_equal_measures, node_equal_weights = compute_node_weights(
+                nnodes, node_measures_raw, equal_measure=True
+            )
+            np.savez_compressed(
+                os.path.join("./", file_name),
+                nnodes=nnodes,
+                node_mask=node_mask,
+                nodes=nodes,
+                node_measures_raw=node_measures_raw,
+                node_measures=node_measures,
+                node_weights=node_weights,
+                node_equal_measures=node_equal_measures,
+                node_equal_weights=node_equal_weights,
+                features=features,
+                directed_edges=directed_edges,
+                edge_gradient_weights=edge_gradient_weights,
+            )
+
+        preprocess(train_dataset, file_name="pcno_data_train.npz")
+        preprocess(test_dataset, file_name="pcno_data_test.npz")
+        print("Preprocess data done!")
+
+    accelerator.wait_for_everyone()
+
+    def load_data(data_path, dataset, file_name="pcno_data.npz", equal_weights=True):
+
+        data = np.load(os.path.join(data_path, file_name))
+        nnodes, node_mask, nodes = data["nnodes"], data["node_mask"], data["nodes"]
+        node_weights = (
+            data["node_equal_weights"] if equal_weights else data["node_weights"]
+        )
+        node_measures = data["node_measures"]
+        directed_edges, edge_gradient_weights = (
+            data["directed_edges"],
+            data["edge_gradient_weights"],
+        )
+        features = data["features"]
+
+        node_measures_raw = data["node_measures_raw"]
+        indices = np.isfinite(node_measures_raw)
+        node_rhos = np.copy(node_weights)
+        node_rhos[indices] = node_rhos[indices] / node_measures[indices]
+
+        point_cloud_dataset = data_preparition_with_tensordict(
+            nnodes,
+            node_mask,
+            nodes,
+            node_weights,
+            node_rhos,
+            features,
+            directed_edges,
+            edge_gradient_weights,
+            params=dataset.storage["params"],
+        )
+
+        return point_cloud_dataset
+
+    point_cloud_train_dataset = load_data(
+        "./",
+        dataset=train_dataset,
+        file_name="pcno_data_train.npz",
+        equal_weights=config.parameter.equal_weights,
+    )
+    point_cloud_test_dataset = load_data(
+        "./",
+        dataset=test_dataset,
+        file_name="pcno_data_test.npz",
+        equal_weights=config.parameter.equal_weights,
+    )
+
     train_replay_buffer = TensorDictReplayBuffer(
-        storage=train_dataset.storage,
+        storage=point_cloud_train_dataset.storage,
         batch_size=batch_size,
         # sampler=RandomSampler(),
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=True),
@@ -304,13 +429,13 @@ def main(args):
     )
 
     test_replay_buffer = TensorDictReplayBuffer(
-        storage=test_dataset.storage,
-        batch_size=1,
+        storage=point_cloud_test_dataset.storage,
+        batch_size=9,
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=False),
         prefetch=10,
     )
 
-    iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
+    iteration_per_epoch = len(point_cloud_train_dataset.storage) // batch_size + 1
 
     accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start training ...")
@@ -325,28 +450,30 @@ def main(args):
         flow_model.train()
         with accelerator.autocast():
             with accelerator.accumulate(flow_model.model):
-
                 data = train_replay_buffer.sample()
                 data = data.to(device)
-                data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
-                    train_dataset.max.to(device) - train_dataset.min.to(device)
-                ) * 2 - 1
-
-                gt = data["gt"][:, :, 1:2]  # (b,257,1)
-                y = (data["params"][:, :] - train_dataset_mean[None, :]) / (
-                    train_dataset_std[None, :] + 1e-8
+                gt = (data["y"] - train_dataset.min.to(device)[1]) / (
+                    train_dataset.max.to(device)[1] - train_dataset.min.to(device)[1]
+                ) * 2 - 1  # (b,257,1)
+                data["condition"]["params"] = (
+                    (data["condition"]["params"] - train_dataset_mean[None, :])
+                    / train_dataset_std[None, :]
+                ).to(
+                    torch.float32
                 )  # (b,15)
-                gt = gt.to(device).to(torch.float32)
-                y = y.to(device).to(torch.float32)
 
-                gt = gt.reshape(-1, 1, 257)  # (b,1,257)
+                gt = gt.to(device).to(torch.float32)
+
+                gt_reshape = gt.reshape(-1, 1, 257)  # (b,1,257)
                 gaussian_prior = flow_model.gaussian_process.sample_from_prior(
                     dims=config.flow_model.gaussian_process.dims,
-                    n_samples=gt.shape[0],
-                    n_channels=gt.shape[1],
+                    n_samples=gt_reshape.shape[0],
+                    n_channels=gt_reshape.shape[1],
                 )
-                loss = flow_model.optimal_transport_functional_flow_matching_loss(
-                    x0=gaussian_prior, x1=gt, condition=y
+                loss = flow_model.functional_flow_matching_loss(
+                    x0=gaussian_prior,
+                    x1=gt_reshape,
+                    condition=data["condition"],
                 )
                 optimizer.zero_grad()
                 accelerator.backward(loss)
@@ -375,26 +502,27 @@ def main(args):
                     to_log,
                     step=iteration,
                 )
-                acc_train_loss = loss.mean().item()
-                print(
-                    f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
-                )
+            acc_train_loss = loss.mean().item()
+            print(
+                f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
+            )
 
         if iteration % config.parameter.eval_rate == 0:
-            # breakpoint()
             flow_model.eval()
             with torch.no_grad():
                 data = test_replay_buffer.sample()
                 data = data.to(device)
-                y = (data["params"][:, :] - train_dataset_mean[None, :]) / (
-                    train_dataset_std[None, :] + 1e-8
+                data["condition"]["params"] = (
+                    (data["condition"]["params"][:, :] - train_dataset_mean[None, :])
+                    / train_dataset_std[None, :]
+                ).to(
+                    torch.float32
                 )  # (b,15)
                 sample_trajectory = flow_model.sample_process(
                     n_dims=config.flow_model.gaussian_process.dims,
                     n_channels=1,
-                    t_span=torch.linspace(0.0, 1.0, 1000),
-                    batch_size=1,
-                    condition=y.repeat(10, 1),
+                    t_span=torch.linspace(0.0, 1.0, 100),
+                    condition=data["condition"],
                 )
                 # sample_trajectory is of shape (T, B, C, D)
 
@@ -452,12 +580,6 @@ if __name__ == "__main__":
         help="Choose a dataset.",
     )
     argparser.add_argument(
-        "--dataset_names",
-        type=lambda s: s.split(","),
-        default=[],
-        help="Type of the data to be used, default is all the data in the dataset.",
-    )
-    argparser.add_argument(
         "--data_path", "-dp", default="data", type=str, help="Dataset path."
     )
     argparser.add_argument(
@@ -471,8 +593,19 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--project_name",
         type=str,
-        default="airfoil-conditional-training",
+        default="airfoil-unconditional-training-with-PCNO",
         help="Project name",
     )
+    argparser.add_argument(
+        "--preprocess_data",
+        action="store_true",
+        help="Whether to preprocess data",
+    )
+    argparser.add_argument(
+        "--equal_weights",
+        action="store_true",
+        help="Whether to use equal weights for different nodes",
+    )
+
     args = argparser.parse_args()
     main(args)

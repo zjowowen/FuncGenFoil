@@ -180,15 +180,19 @@ def main(args):
     flow_model.model.load_state_dict(new_state_dict)
     print("Model loaded from: ", config.parameter.model_load_path)
 
-    train_dataset = Dataset(
-        split="train",
-        std_cst_augmentation=0.08,
-        num_perturbed_airfoils=10,
-        dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-        max_size=100000,
-    ) if args.dataset == "supercritical" else AF200KDataset(
-                split="train",
-                dataset_names=[
+    train_dataset = (
+        Dataset(
+            split="train",
+            std_cst_augmentation=0.08,
+            num_perturbed_airfoils=10,
+            dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
+            max_size=100000,
+        )
+        if args.dataset == "supercritical"
+        else AF200KDataset(
+            split="train",
+            dataset_names=(
+                [
                     "beziergan_gen",
                     "cst_gen",
                     "cst_gen_a",
@@ -197,11 +201,14 @@ def main(args):
                     "interpolated_uiuc",
                     "naca_gen",
                     "supercritical_airfoil_af200k",
-                ] if len(args.dataset_names)==0 else args.dataset_names,
-                folder_path=args.data_path,
-                num_constraints=args.num_constraints,
-            )
-
+                ]
+                if len(args.dataset_names) == 0
+                else args.dataset_names
+            ),
+            folder_path=args.data_path,
+            num_constraints=args.num_constraints,
+        )
+    )
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)

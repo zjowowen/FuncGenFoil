@@ -1,6 +1,12 @@
 import torch.nn as nn
 
-from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
+from airfoil_generation.neural_networks.neural_operator import (
+    FourierNeuralOperator,
+    FourierNeuralOperatorDeterministic,
+)
+from airfoil_generation.neural_networks.point_cloud_neural_operator import (
+    PointCloudNeuralOperator,
+)
 
 
 def register_module(module: nn.Module, name: str):
@@ -26,4 +32,6 @@ def get_module(type: str):
 
 MODULES = {
     "FourierNeuralOperator".lower(): FourierNeuralOperator,
+    "FourierNeuralOperatorDeterministic".lower(): FourierNeuralOperatorDeterministic,
+    "PointCloudNeuralOperator".lower(): PointCloudNeuralOperator,
 }

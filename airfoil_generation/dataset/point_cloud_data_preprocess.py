@@ -2,6 +2,9 @@ import os
 import numpy as np
 import torch
 from tqdm import tqdm
+import torch
+from tensordict import TensorDict
+from airfoil_generation.dataset.tensordict_dataset import TensorDictDataset
 
 
 def compute_triangle_area_(points):
@@ -674,35 +677,6 @@ def compute_node_weights(nnodes, node_measures, equal_measure=False):
     return node_measures_new, node_weights
 
 
-def load_data(data_path, file_name="pcno_data.npz"):
-    equal_weights = True
-
-    data = np.load(os.path.join(data_path, file_name))
-    nnodes, node_mask, nodes = data["nnodes"], data["node_mask"], data["nodes"]
-    node_weights = data["node_equal_weights"] if equal_weights else data["node_weights"]
-    node_measures = data["node_measures"]
-    directed_edges, edge_gradient_weights = (
-        data["directed_edges"],
-        data["edge_gradient_weights"],
-    )
-    features = data["features"]
-
-    node_measures_raw = data["node_measures_raw"]
-    indices = np.isfinite(node_measures_raw)
-    node_rhos = np.copy(node_weights)
-    node_rhos[indices] = node_rhos[indices] / node_measures[indices]
-    return (
-        nnodes,
-        node_mask,
-        nodes,
-        node_weights,
-        node_rhos,
-        features,
-        directed_edges,
-        edge_gradient_weights,
-    )
-
-
 def data_preparition_with_tensordict(
     nnodes,
     node_mask,
@@ -712,14 +686,7 @@ def data_preparition_with_tensordict(
     features,
     directed_edges,
     edge_gradient_weights,
-    n_train=1000,
-    n_test=200,
-    normalization_x=False,
-    normalization_y=False,
-    normalization_dim_x=[],
-    normalization_dim_y=[],
-    non_normalized_dim_x=3,
-    non_normalized_dim_y=0,
+    params,
 ):
     print("Casting to tensor")
     nnodes = torch.from_numpy(nnodes)
@@ -733,108 +700,28 @@ def data_preparition_with_tensordict(
 
     # This is important
     nodes_input = nodes.clone()
+    n_train = nodes_input.shape[0]
 
     train_data = TensorDict(
         {
-            "y": features[:n_train, ...],
+            "y": features[:, ...],
             "condition": TensorDict(
                 {
-                    "x": torch.cat(
-                        (nodes_input[:n_train, ...], node_rhos[:n_train, ...]), -1
-                    ),
-                    "node_mask": node_mask[0:n_train, ...],
-                    "nodes": nodes[0:n_train, ...],
-                    "node_weights": node_weights[0:n_train, ...],
-                    "directed_edges": directed_edges[0:n_train, ...],
-                    "edge_gradient_weights": edge_gradient_weights[0:n_train, ...],
+                    "params": params,
+                    "x": torch.cat((nodes_input[:, ...], node_rhos[:, ...]), -1),
+                    "node_mask": node_mask[0:, ...],
+                    "nodes": nodes[0:, ...],
+                    "node_weights": node_weights[0:, ...],
+                    "directed_edges": directed_edges[0:, ...],
+                    "edge_gradient_weights": edge_gradient_weights[0:, ...],
                 },
                 batch_size=(n_train,),
             ),
         },
         batch_size=(n_train,),
     )
-    test_data = TensorDict(
-        {
-            "y": features[-n_test:, ...],
-            "condition": TensorDict(
-                {
-                    "x": torch.cat(
-                        (nodes_input[-n_test:, ...], node_rhos[-n_test:, ...]), -1
-                    ),
-                    "node_mask": node_mask[-n_test:, ...],
-                    "nodes": nodes[-n_test:, ...],
-                    "node_weights": node_weights[-n_test:, ...],
-                    "directed_edges": directed_edges[-n_test:, ...],
-                    "edge_gradient_weights": edge_gradient_weights[-n_test:, ...],
-                },
-                batch_size=(n_test,),
-            ),
-        },
-        batch_size=(n_test,),
-    )
-
-    n_train, n_test = (
-        train_data["condition"]["x"].shape[0],
-        test_data["condition"]["x"].shape[0],
-    )
 
     train_dataset = TensorDictDataset(keys=["y", "condition"], max_size=n_train)
-    test_dataset = TensorDictDataset(keys=["y", "condition"], max_size=n_test)
     train_dataset.append(train_data, batch_size=n_train)
-    test_dataset.append(test_data, batch_size=n_test)
 
-    return train_dataset, test_dataset
-
-
-def data_preprocess():
-
-    # coordx is of [B, N], where B is the batch size and N is the number of points
-    # data_out is of [B, D, N], where B is the batch size and N is the number of points, and D is the number of dimensions of features
-    pass
-
-
-if __name__ == "__main__":
-
-    # synthetic batch: 2 samples, each with 6 evenly‐spaced nodes
-    ndata, nx, nfeat = 2, 6, 3
-    coordx = np.linspace(0.0, 1.0, nx)[None, :].repeat(ndata, axis=0)  # [ndata,nx]
-    features = np.random.rand(ndata, nx, nfeat)  # dummy features
-
-    nodes_list, elems_list, features_list = convert_structured_data_1D(
-        [
-            coordx,
-        ],
-        features,
-        nnodes_per_elem=2,
-        feature_include_coords=False,
-    )
-
-    (
-        nnodes,
-        node_mask,
-        nodes,
-        node_measures_raw,
-        features,
-        directed_edges,
-        edge_gradient_weights,
-    ) = preprocess_data(nodes_list, elems_list, features_list)
-    node_measures, node_weights = compute_node_weights(
-        nnodes, node_measures_raw, equal_measure=False
-    )
-    node_equal_measures, node_equal_weights = compute_node_weights(
-        nnodes, node_measures_raw, equal_measure=True
-    )
-    np.savez_compressed(
-        os.path.join("./", "pcno_data.npz"),
-        nnodes=nnodes,
-        node_mask=node_mask,
-        nodes=nodes,
-        node_measures_raw=node_measures_raw,
-        node_measures=node_measures,
-        node_weights=node_weights,
-        node_equal_measures=node_equal_measures,
-        node_equal_weights=node_equal_weights,
-        features=features,
-        directed_edges=directed_edges,
-        edge_gradient_weights=edge_gradient_weights,
-    )
+    return train_dataset

@@ -163,3 +163,77 @@ class FourierNeuralOperator(nn.Module):
         out = self.model(u)
 
         return out
+
+
+class FourierNeuralOperatorDeterministic(nn.Module):
+    """
+    Overview:
+        Fourier Neural Operator model.
+    Interfaces:
+        ``__init__``, ``forward``
+    """
+
+    def __init__(
+        self,
+        modes: int,
+        vis_channels: int,
+        hidden_channels: int,
+        proj_channels: int,
+        x_dim: int = 1,
+        n_layers: int = 4,
+        n_conditions: int = 0,
+    ):
+        """
+        Overview:
+            Initialize the model.
+        Arguments:
+            - modes (int): number of Fourier modes
+            - vis_channels (int): number of visual channels
+            - hidden_channels (int): number of hidden channels
+            - proj_channels (int): number of projection channels
+            - x_dim (int): number of dimensions of the input grid
+        """
+        super().__init__()
+
+        n_modes = (modes,) * x_dim  # Same number of modes in each x dimension
+        in_channels = (
+            vis_channels + x_dim + 1 + n_conditions
+        )  # visual channels + spatial embedding + time embedding
+
+        self.model = FNO(
+            n_modes=n_modes,
+            hidden_channels=hidden_channels,
+            projection_channels=proj_channels,
+            in_channels=in_channels,
+            out_channels=vis_channels,
+            n_layers=n_layers,
+        )
+
+    def forward(self, x, condition=None):
+        """
+        Overview:
+            Forward pass of the model.
+        Arguments:
+            - x (torch.Tensor): input tensor
+            - condition (torch.Tensor): condition tensor
+        Returns:
+            - out (torch.Tensor): output tensor
+        """
+        u = torch.zeros_like(x)
+        # u: (batch_size, channels, h, w)
+
+        batch_size = u.shape[0]
+        dims = u.shape[2:]
+
+        posn_emb = make_posn_embed(batch_size, dims).to(u.device)
+        if condition is not None:
+            condition = condition.unsqueeze(2).expand(
+                -1, -1, u.shape[2]
+            )  # 扩展成 (B, 11, 257)
+            u = torch.cat((u, posn_emb, condition), dim=1).float()
+        else:
+            u = torch.cat((u, posn_emb), dim=1).float()  # todo fix precision
+
+        out = self.model(u)
+
+        return out

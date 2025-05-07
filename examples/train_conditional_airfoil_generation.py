@@ -254,16 +254,20 @@ def main(args):
         else (
             AF200KDataset(
                 split="test",
-                dataset_names=[
-                    "beziergan_gen",
-                    "cst_gen",
-                    "cst_gen_a",
-                    "cst_gen_b",
-                    "diffusion_gen",
-                    "interpolated_uiuc",
-                    "naca_gen",
-                    "supercritical_airfoil_af200k",
-                ] if len(args.dataset_names)==0 else args.dataset_names,
+                dataset_names=(
+                    [
+                        "beziergan_gen",
+                        "cst_gen",
+                        "cst_gen_a",
+                        "cst_gen_b",
+                        "diffusion_gen",
+                        "interpolated_uiuc",
+                        "naca_gen",
+                        "supercritical_airfoil_af200k",
+                    ]
+                    if len(args.dataset_names) == 0
+                    else args.dataset_names
+                ),
                 folder_path=args.data_path,
                 num_constraints=args.num_constraints,
             )

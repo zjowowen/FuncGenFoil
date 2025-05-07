@@ -159,7 +159,7 @@ def main(args):
             parameter=dict(
                 equal_weights=args.equal_weights,
                 train_samples=20000 if args.dataset == "supercritical" else 200000,
-                batch_size=1024,
+                batch_size=10,
                 learning_rate=5e-5 * accelerator.num_processes,
                 iterations=(
                     20000 // 1024 * 2000
@@ -459,7 +459,7 @@ def main(args):
                 ) * 2 - 1  # (b,257,1)
                 data["condition"]["params"] = (
                     (data["condition"]["params"] - train_dataset_mean[None, :])
-                    / train_dataset_std[None, :]
+                    / (train_dataset_std[None, :] + 1e-8)
                 ).to(
                     torch.float32
                 )  # (b,15)
@@ -516,7 +516,7 @@ def main(args):
                 data = data.to(device)
                 data["condition"]["params"] = (
                     (data["condition"]["params"][:, :] - train_dataset_mean[None, :])
-                    / train_dataset_std[None, :]
+                    / (train_dataset_std[None, :] + 1e-8)
                 ).to(
                     torch.float32
                 )  # (b,15)

@@ -299,6 +299,8 @@ def main(args):
         )
     )
 
+    print(f"Data number: {len(train_dataset)}")
+
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(

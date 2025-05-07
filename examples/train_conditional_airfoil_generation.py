@@ -274,6 +274,8 @@ def main(args):
         )
     )
 
+    print(f"Data number: {len(train_dataset)}")
+
     # # save train_dataset_min and train_dataset_max using safetensors
     # from safetensors.torch import save_file
     # # Create a dictionary

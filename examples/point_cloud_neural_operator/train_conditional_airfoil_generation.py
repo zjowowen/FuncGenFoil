@@ -159,7 +159,7 @@ def main(args):
             parameter=dict(
                 equal_weights=args.equal_weights,
                 train_samples=20000 if args.dataset == "supercritical" else 200000,
-                batch_size=10,
+                batch_size=1024,
                 learning_rate=5e-5 * accelerator.num_processes,
                 iterations=(
                     20000 // 1024 * 2000

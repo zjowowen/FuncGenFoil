@@ -447,7 +447,7 @@ def main(args):
                     train_dataset_std[None, :] + 1e-8
                 )  # (b,15)
                 sample_trajectory = flow_model.sample_process(
-                    n_dims=config.flow_model.gaussian_process.dims,
+                    n_dims=config.flow_model.gaussian_process.args.dims,
                     n_channels=1,
                     t_span=torch.linspace(0.0, 1.0, 1000),
                     batch_size=1,

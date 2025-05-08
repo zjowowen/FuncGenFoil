@@ -47,7 +47,7 @@ def render_video_3x3_polish(
     dpi=150,  # Higher DPI for crispness
 ):
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
+        os.makedirs(video_save_path, exist_ok=True)
 
     # Use a modern matplotlib style
     plt.style.use("seaborn-v0_8-dark-palette")
@@ -130,7 +130,7 @@ def render_video_3x3(
     dpi=100,
 ):
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
+        os.makedirs(video_save_path, exist_ok=True)
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
 
@@ -234,6 +234,7 @@ def cal_mean(arr):
 
 
 def main(args):
+
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
@@ -261,9 +262,25 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type=args.kernel_type,
+                    args={
+                        "matern": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            nu=args.nu,
+                            dims=[257],
+                        ),
+                        "rbf": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            dims=[257],
+                        ),
+                        "white": dict(
+                            device=device,
+                            noise_level=args.noise_level,
+                            dims=[257],
+                        ),
+                    }.get(args.kernel_type, None),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -317,9 +334,7 @@ def main(args):
                         )
                     )
                 ),
-                warmup_steps=(
-                    2000 if args.dataset == "supercritical" else 20000 // 1024 * 2000
-                ),
+                warmup_steps=2000,
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
@@ -648,29 +663,30 @@ def main(args):
                 with_grad=False,
             )
 
-            # figure_list = [
-            #     x.squeeze(0).cpu().numpy()
-            #     for x in torch.split(
-            #         sample_trajectory, split_size_or_sections=1, dim=0
-            #     )
-            # ]
+            if args.render:
+                figure_list = [
+                    x.squeeze(0).cpu().numpy()
+                    for x in torch.split(
+                        sample_trajectory, split_size_or_sections=1, dim=0
+                    )
+                ]
 
-            # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
-            # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+                # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+                # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
 
-            # p = mp.Process(
-            #     target=render_video_3x3,
-            #     args=(
-            #         figure_list,
-            #         args.project_name,
-            #         i,
-            #         train_dataset.max.cpu().numpy(),
-            #         train_dataset.min.cpu().numpy(),
-            #     ),
-            #     daemon=True,
-            # )
-            # p.start()
-            # mp_list.append(p)
+                p = mp.Process(
+                    target=render_video_3x3_polish,
+                    args=(
+                        figure_list,
+                        args.project_name,
+                        i,
+                        train_dataset.max.cpu().numpy(),
+                        train_dataset.min.cpu().numpy(),
+                    ),
+                    daemon=True,
+                )
+                p.start()
+                mp_list.append(p)
 
             sample_trajectorys.append(sample_trajectory)
 
@@ -826,6 +842,39 @@ if __name__ == "__main__":
         default=None,
         type=int,
         help="Number of training epochs.",
+    )
+    argparser.add_argument(
+        "--length_scale",
+        "-l",
+        default=0.03,
+        type=float,
+        help="length_scale of Matérn kernel and rbf kernel default = 1 if rbf else 0.03 ",
+    )
+
+    argparser.add_argument(
+        "--nu",
+        default=2.5,
+        type=float,
+        help="Matérn kernel nu",
+    )
+
+    argparser.add_argument(
+        "--noise_level",
+        default=1.0,
+        type=float,
+        help="noise_level of white kernel ",
+    )
+
+    argparser.add_argument(
+        "--kernel_type",
+        default="matern",
+        type=str,
+        help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
+    )
+    argparser.add_argument(
+        "--render",
+        action="store_true",
+        help="Whether to render the video",
     )
 
     args = argparser.parse_args()

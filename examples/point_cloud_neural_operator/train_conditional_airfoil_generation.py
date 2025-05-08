@@ -6,6 +6,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 import torch
@@ -32,6 +33,89 @@ from airfoil_generation.neural_networks.point_cloud_neural_operator import (
 )
 
 
+def render_video_3x3_polish(
+    data_list,
+    video_save_path,
+    iteration,
+    train_dataset_max,
+    train_dataset_min,
+    fps=30,  # Lower FPS for artistic, slower animation
+    dpi=150,  # Higher DPI for crispness
+):
+    if not os.path.exists(video_save_path):
+        os.makedirs(video_save_path, exist_ok=True)
+
+    # Use a modern matplotlib style
+    plt.style.use("seaborn-v0_8-dark-palette")
+
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
+    frames = len(data_list)
+
+    fig, axs = plt.subplots(3, 3, figsize=(10, 10))
+    fig.patch.set_facecolor("#11131b")  # deep dark background
+
+    # Choose a beautiful colormap
+    color_map = cm.get_cmap("magma", 9)
+    scatter_map = cm.get_cmap("cool", 9)
+
+    def update(frame_idx):
+        data = data_list[frame_idx].squeeze()
+        for j, ax in enumerate(axs.flat):
+            ax.clear()
+            ax.set_xlim([0, 1])
+            ax.set_ylim([-0.1, 0.1])
+            ax.set_facecolor("#1b1d2b")
+
+            # Remove axis ticks and spines for minimalism
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+            # Calculate y values
+            y = (data[j, :] + 1) / 2 * (
+                train_dataset_max[1] - train_dataset_min[1]
+            ) + train_dataset_min[1]
+
+            # Plot with smooth, thick, semi-transparent line
+            ax.plot(
+                xs,
+                y,
+                lw=2.5,
+                color=color_map(j),
+                alpha=0.85,
+                solid_capstyle="round",
+            )
+            # Scatter with lower alpha, slightly larger size for glow effect
+            ax.scatter(
+                xs,
+                y,
+                s=12,
+                c=[scatter_map(j)],
+                edgecolors="none",
+                alpha=0.28,
+                zorder=3,
+            )
+
+            # Optional: Add a soft grid for depth
+            ax.grid(
+                visible=True, color="#2a2e42", linestyle="--", linewidth=0.5, alpha=0.3
+            )
+
+        return []
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=range(frames), interval=1000 / fps, blit=False
+    )
+
+    save_path = os.path.join(video_save_path, f"iteration_{iteration}.mp4")
+    ani.save(save_path, fps=fps, dpi=dpi, writer="ffmpeg")
+
+    plt.close(fig)
+    plt.clf()
+    print(f"Saved video to {save_path}")
+
+
 def render_video_3x3(
     data_list,
     video_save_path,
@@ -42,7 +126,7 @@ def render_video_3x3(
     dpi=100,
 ):
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
+        os.makedirs(video_save_path, exist_ok=True)
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
 
@@ -122,9 +206,25 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type=args.kernel_type,
+                    args={
+                        "matern": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            nu=args.nu,
+                            dims=[257],
+                        ),
+                        "rbf": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            dims=[257],
+                        ),
+                        "white": dict(
+                            device=device,
+                            noise_level=args.noise_level,
+                            dims=[257],
+                        ),
+                    }.get(args.kernel_type, None),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -178,7 +278,7 @@ def main(args):
                         )
                     )
                 ),
-                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
+                warmup_steps=2000,
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
@@ -559,7 +659,7 @@ def main(args):
 
                 # render_video_3x3(data_list, "output", iteration)
                 p = mp.Process(
-                    target=render_video_3x3,
+                    target=render_video_3x3_polish,
                     args=(
                         data_list,
                         "output",
@@ -652,6 +752,34 @@ if __name__ == "__main__":
         default=None,
         type=int,
         help="Number of training epochs.",
+    )
+    argparser.add_argument(
+        "--length_scale",
+        "-l",
+        default=0.03,
+        type=float,
+        help="length_scale of Matérn kernel and rbf kernel default = 1 if rbf else 0.03 ",
+    )
+
+    argparser.add_argument(
+        "--nu",
+        default=2.5,
+        type=float,
+        help="Matérn kernel nu",
+    )
+
+    argparser.add_argument(
+        "--noise_level",
+        default=1.0,
+        type=float,
+        help="noise_level of white kernel ",
+    )
+
+    argparser.add_argument(
+        "--kernel_type",
+        default="matern",
+        type=str,
+        help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
     args = argparser.parse_args()

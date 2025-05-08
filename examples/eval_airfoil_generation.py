@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 import torch
@@ -30,6 +31,89 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
 )
 
 from scipy.spatial.distance import pdist, squareform
+
+
+def render_video_3x3_polish(
+    data_list,
+    video_save_path,
+    iteration,
+    train_dataset_max,
+    train_dataset_min,
+    fps=30,  # Lower FPS for artistic, slower animation
+    dpi=150,  # Higher DPI for crispness
+):
+    if not os.path.exists(video_save_path):
+        os.makedirs(video_save_path, exist_ok=True)
+
+    # Use a modern matplotlib style
+    plt.style.use("seaborn-v0_8-dark-palette")
+
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
+    frames = len(data_list)
+
+    fig, axs = plt.subplots(3, 3, figsize=(10, 10))
+    fig.patch.set_facecolor("#11131b")  # deep dark background
+
+    # Choose a beautiful colormap
+    color_map = cm.get_cmap("magma", 9)
+    scatter_map = cm.get_cmap("cool", 9)
+
+    def update(frame_idx):
+        data = data_list[frame_idx].squeeze()
+        for j, ax in enumerate(axs.flat):
+            ax.clear()
+            ax.set_xlim([0, 1])
+            ax.set_ylim([-0.1, 0.1])
+            ax.set_facecolor("#1b1d2b")
+
+            # Remove axis ticks and spines for minimalism
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+            # Calculate y values
+            y = (data[j, :] + 1) / 2 * (
+                train_dataset_max[1] - train_dataset_min[1]
+            ) + train_dataset_min[1]
+
+            # Plot with smooth, thick, semi-transparent line
+            ax.plot(
+                xs,
+                y,
+                lw=2.5,
+                color=color_map(j),
+                alpha=0.85,
+                solid_capstyle="round",
+            )
+            # Scatter with lower alpha, slightly larger size for glow effect
+            ax.scatter(
+                xs,
+                y,
+                s=12,
+                c=[scatter_map(j)],
+                edgecolors="none",
+                alpha=0.28,
+                zorder=3,
+            )
+
+            # Optional: Add a soft grid for depth
+            ax.grid(
+                visible=True, color="#2a2e42", linestyle="--", linewidth=0.5, alpha=0.3
+            )
+
+        return []
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=range(frames), interval=1000 / fps, blit=False
+    )
+
+    save_path = os.path.join(video_save_path, f"iteration_{iteration}.mp4")
+    ani.save(save_path, fps=fps, dpi=dpi, writer="ffmpeg")
+
+    plt.close(fig)
+    plt.clf()
+    print(f"Saved video to {save_path}")
 
 
 def calculate_smoothness(airfoil):
@@ -325,6 +409,7 @@ def main(args):
         )
     )
 
+    mp_list = []
     for i in track(
         range(len(test_dataset.storage)),
         description="Evaluating",
@@ -344,17 +429,42 @@ def main(args):
 
         sample_trajectorys = []
         for r, prior in zip(rs, priors):
-            sample_trajectorys.append(
-                flow_model.sample_process(
-                    n_dims=[r],
-                    n_channels=1,
-                    t_span=torch.linspace(0.0, 1.0, 10),
-                    batch_size=1,
-                    x_0=prior,
-                    condition=y.repeat(20, 1),
-                    with_grad=False,
-                )
+            sample_trajectory = flow_model.sample_process(
+                n_dims=[r],
+                n_channels=1,
+                t_span=torch.linspace(0.0, 1.0, 10),
+                batch_size=1,
+                x_0=prior,
+                condition=y.repeat(20, 1),
+                with_grad=False,
             )
+
+            if args.render:
+                figure_list = [
+                    x.squeeze(0).cpu().numpy()
+                    for x in torch.split(
+                        sample_trajectory, split_size_or_sections=1, dim=0
+                    )
+                ]
+
+                # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+                # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+
+                p = mp.Process(
+                    target=render_video_3x3_polish,
+                    args=(
+                        figure_list,
+                        args.project_name,
+                        i,
+                        train_dataset.max.cpu().numpy(),
+                        train_dataset.min.cpu().numpy(),
+                    ),
+                    daemon=True,
+                )
+                p.start()
+                mp_list.append(p)
+
+            sample_trajectorys.append(sample_trajectory)
 
         data_list_list = []
         for sample_trajectory in sample_trajectorys:
@@ -494,6 +604,11 @@ if __name__ == "__main__":
         default=None,
         type=int,
         help="Number of training epochs.",
+    )
+    argparser.add_argument(
+        "--render",
+        action="store_true",
+        help="Whether to render the video",
     )
 
     args = argparser.parse_args()

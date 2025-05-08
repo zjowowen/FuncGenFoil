@@ -10,6 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 import torch
@@ -38,6 +39,89 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
 from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
+
+
+def render_video_3x3_polish(
+    data_list,
+    video_save_path,
+    iteration,
+    train_dataset_max,
+    train_dataset_min,
+    fps=30,  # Lower FPS for artistic, slower animation
+    dpi=150,  # Higher DPI for crispness
+):
+    if not os.path.exists(video_save_path):
+        os.makedirs(video_save_path, exist_ok=True)
+
+    # Use a modern matplotlib style
+    plt.style.use("seaborn-v0_8-dark-palette")
+
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
+    frames = len(data_list)
+
+    fig, axs = plt.subplots(3, 3, figsize=(10, 10))
+    fig.patch.set_facecolor("#11131b")  # deep dark background
+
+    # Choose a beautiful colormap
+    color_map = cm.get_cmap("magma", 9)
+    scatter_map = cm.get_cmap("cool", 9)
+
+    def update(frame_idx):
+        data = data_list[frame_idx].squeeze()
+        for j, ax in enumerate(axs.flat):
+            ax.clear()
+            ax.set_xlim([0, 1])
+            ax.set_ylim([-0.1, 0.1])
+            ax.set_facecolor("#1b1d2b")
+
+            # Remove axis ticks and spines for minimalism
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+            # Calculate y values
+            y = (data[j, :] + 1) / 2 * (
+                train_dataset_max[1] - train_dataset_min[1]
+            ) + train_dataset_min[1]
+
+            # Plot with smooth, thick, semi-transparent line
+            ax.plot(
+                xs,
+                y,
+                lw=2.5,
+                color=color_map(j),
+                alpha=0.85,
+                solid_capstyle="round",
+            )
+            # Scatter with lower alpha, slightly larger size for glow effect
+            ax.scatter(
+                xs,
+                y,
+                s=12,
+                c=[scatter_map(j)],
+                edgecolors="none",
+                alpha=0.28,
+                zorder=3,
+            )
+
+            # Optional: Add a soft grid for depth
+            ax.grid(
+                visible=True, color="#2a2e42", linestyle="--", linewidth=0.5, alpha=0.3
+            )
+
+        return []
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=range(frames), interval=1000 / fps, blit=False
+    )
+
+    save_path = os.path.join(video_save_path, f"iteration_{iteration}.mp4")
+    ani.save(save_path, fps=fps, dpi=dpi, writer="ffmpeg")
+
+    plt.close(fig)
+    plt.clf()
+    print(f"Saved video to {save_path}")
 
 
 def render_video_3x3(
@@ -104,8 +188,6 @@ def render_video_3x3(
 
 def main(args):
 
-    # breakpoint()
-
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
@@ -127,8 +209,8 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    type= args.kernel_type,
-                    args = {
+                    type=args.kernel_type,
+                    args={
                         "matern": dict(
                             device=device,
                             length_scale=args.length_scale,
@@ -145,7 +227,7 @@ def main(args):
                             noise_level=args.noise_level,
                             dims=[257],
                         ),
-                    }.get(args.kernel_type, None)                   
+                    }.get(args.kernel_type, None),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -226,9 +308,27 @@ def main(args):
         config.parameter.model_load_path
     ):
         # pop out _metadata key
-        state_dict = torch.load(config.parameter.model_load_path, map_location="cpu")
+        state_dict = torch.load(
+            config.parameter.model_load_path,
+            map_location="cpu",
+            weights_only=False,
+        )
         state_dict.pop("_metadata", None)
-        flow_model.model.load_state_dict(state_dict)
+
+        # Create a new dictionary with updated keys
+        prefix = "_orig_mod."
+        new_state_dict = {}
+
+        for key, value in state_dict.items():
+            if key.startswith(prefix):
+                # Remove the prefix from the key
+                new_key = key[len(prefix) :]
+            else:
+                new_key = key
+            new_state_dict[new_key] = value
+
+        flow_model.model.load_state_dict(new_state_dict)
+        print(f"Load model from {config.parameter.model_load_path} successfully!")
 
     optimizer = torch.optim.Adam(
         flow_model.model.parameters(), lr=config.parameter.learning_rate
@@ -464,7 +564,7 @@ def main(args):
 
                 # render_video_3x3(data_list, "output", iteration)
                 p = mp.Process(
-                    target=render_video_3x3,
+                    target=render_video_3x3_polish,
                     args=(
                         data_list,
                         "output",

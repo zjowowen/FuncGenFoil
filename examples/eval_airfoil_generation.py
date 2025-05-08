@@ -1,8 +1,15 @@
 import argparse
 import os
+import torch.multiprocessing as mp
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
+
 import numpy as np
 import torch
-
 from torchrl.data import TensorDictReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 
@@ -275,6 +282,8 @@ def main(args):
         )
     )
 
+    print(f"Data number: {len(train_dataset)}")
+
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(
@@ -298,7 +307,6 @@ def main(args):
     accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start evaluation ...")
 
-    # breakpoint()
     flow_model.eval()
     resolution = config.flow_model.gaussian_process.dims[0]
     rs = [resolution]

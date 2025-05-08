@@ -218,7 +218,27 @@ def main(args):
             num_constraints=args.num_constraints,
         )
         if args.dataset == "supercritical"
-        else (AF200KDataset(split="train"))
+        else (
+            AF200KDataset(
+                split="train",
+                dataset_names=(
+                    [
+                        "beziergan_gen",
+                        "cst_gen",
+                        "cst_gen_a",
+                        "cst_gen_b",
+                        "diffusion_gen",
+                        "interpolated_uiuc",
+                        "naca_gen",
+                        "supercritical_airfoil_af200k",
+                    ]
+                    if len(args.dataset_names) == 0
+                    else args.dataset_names
+                ),
+                folder_path=args.data_path,
+                num_constraints=args.num_constraints,
+            )
+        )
     )
 
     test_dataset = (
@@ -232,7 +252,27 @@ def main(args):
             num_constraints=args.num_constraints,
         )
         if args.dataset == "supercritical"
-        else (AF200KDataset(split="test"))
+        else (
+            AF200KDataset(
+                split="test",
+                dataset_names=(
+                    [
+                        "beziergan_gen",
+                        "cst_gen",
+                        "cst_gen_a",
+                        "cst_gen_b",
+                        "diffusion_gen",
+                        "interpolated_uiuc",
+                        "naca_gen",
+                        "supercritical_airfoil_af200k",
+                    ]
+                    if len(args.dataset_names) == 0
+                    else args.dataset_names
+                ),
+                folder_path=args.data_path,
+                num_constraints=args.num_constraints,
+            )
+        )
     )
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))

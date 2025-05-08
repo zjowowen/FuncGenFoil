@@ -442,6 +442,12 @@ if __name__ == "__main__":
     )
     argparser.add_argument("--model_path", "-p", type=str, help="Model load path.")
     argparser.add_argument(
+        "--dataset_names",
+        type=lambda s: s.split(","),
+        default=[],
+        help="Type of the data to be used, default is all the data in the dataset.",
+    )
+    argparser.add_argument(
         "--data_path", "-dp", default="data", type=str, help="Dataset path."
     )
     argparser.add_argument(

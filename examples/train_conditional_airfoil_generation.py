@@ -562,7 +562,7 @@ if __name__ == "__main__":
 
     argparser.add_argument(
         "--noise_level",
-        default=1,
+        default=1.0,
         type=float,
         help="noise_level of white kernel ",
     )
@@ -571,7 +571,7 @@ if __name__ == "__main__":
         "--kernel_type",
         default="matern",
         type=str,
-        help="which gausssian kernel to use ",
+        help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
     args = argparser.parse_args()

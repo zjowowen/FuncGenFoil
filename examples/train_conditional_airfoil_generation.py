@@ -127,8 +127,8 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
+                    length_scale=args.length_scale,
+                    nu=args.nu,
                     dims=[257],
                 ),
                 solver=dict(
@@ -528,6 +528,20 @@ if __name__ == "__main__":
         default=None,
         type=int,
         help="Number of training epochs.",
+    )
+    argparser.add_argument(
+        "--length_scale",
+        "-l",
+        default=0.03,
+        type=float,
+        help="Matérn kernel length_scale",
+    )
+
+    argparser.add_argument(
+        "--nu",
+        default=2.5,
+        type=float,
+        help="Matérn kernel nu",
     )
 
     args = argparser.parse_args()

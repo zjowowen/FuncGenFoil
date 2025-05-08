@@ -45,10 +45,9 @@ class OptimalTransportFunctionalFlow(nn.Module):
         self.path = ConditionalProbabilityPath(config.path)
         self.model = IntrinsicModel(config.model.args) if model is None else model
 
-        # self.gaussian_process = MaternGaussianProcess(
-        #     device=self.device, **config.gaussian_process
-        # )
-        self.gaussian_process = get_gaussian_process(config.gaussian_process.type,**config.gaussian_process.args)
+        self.gaussian_process = get_gaussian_process(
+            config.gaussian_process.type, **config.gaussian_process.args
+        )
 
         self.stochastic_process = StochasticProcess(self.path, self.gaussian_process)
 
@@ -960,8 +959,8 @@ class OptimalTransportFunctionalFlowForRegression(nn.Module):
         self.path = ConditionalProbabilityPath(config.path)
         self.model = IntrinsicModel(config.model.args) if model is None else model
 
-        self.gaussian_process = MaternGaussianProcess(
-            device=self.device, **config.gaussian_process
+        self.gaussian_process = get_gaussian_process(
+            config.gaussian_process.type, **config.gaussian_process.args
         )
         self.stochastic_process = StochasticProcess(self.path, self.gaussian_process)
 

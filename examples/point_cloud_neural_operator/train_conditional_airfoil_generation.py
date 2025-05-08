@@ -590,7 +590,7 @@ def main(args):
 
                 gt_reshape = gt.reshape(-1, 1, 257)  # (b,1,257)
                 gaussian_prior = flow_model.gaussian_process.sample_from_prior(
-                    dims=config.flow_model.gaussian_process.dims,
+                    dims=config.flow_model.gaussian_process.args.dims,
                     n_samples=gt_reshape.shape[0],
                     n_channels=gt_reshape.shape[1],
                 )
@@ -643,7 +643,7 @@ def main(args):
                     torch.float32
                 )  # (b,15)
                 sample_trajectory = flow_model.sample_process(
-                    n_dims=config.flow_model.gaussian_process.dims,
+                    n_dims=config.flow_model.gaussian_process.args.dims,
                     n_channels=1,
                     t_span=torch.linspace(0.0, 1.0, 100),
                     condition=data["condition"],

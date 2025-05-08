@@ -74,9 +74,25 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type=args.kernel_type,
+                    args={
+                        "matern": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            nu=args.nu,
+                            dims=[257],
+                        ),
+                        "rbf": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            dims=[257],
+                        ),
+                        "white": dict(
+                            device=device,
+                            noise_level=args.noise_level,
+                            dims=[257],
+                        ),
+                    }.get(args.kernel_type, None),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -241,7 +257,7 @@ def main(args):
     flow_model_for_regression = OptimalTransportFunctionalFlowForRegression(
         config=config.flow_model_regression,
         model=copy.deepcopy(flow_model.model),
-        prior=torch.zeros(1, 1, config.flow_model.gaussian_process.dims[0]),
+        prior=torch.zeros(1, 1, config.flow_model.gaussian_process.args.dims[0]),
     ).to(device)
 
     for model_index in track(range(300)):
@@ -277,7 +293,7 @@ def main(args):
             warmup_steps=config.parameter.warmup_steps,
         )
 
-        x_range = torch.linspace(0, 1, config.flow_model.gaussian_process.dims[0])
+        x_range = torch.linspace(0, 1, config.flow_model.gaussian_process.args.dims[0])
 
         x_pos_mask = x_range[pos_mask.cpu()]
 

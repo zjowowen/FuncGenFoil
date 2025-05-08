@@ -609,7 +609,7 @@ def main(args):
     accelerator.print("✨ Start evaluation ...")
 
     flow_model.eval()
-    resolution = config.flow_model.gaussian_process.dims[0]
+    resolution = config.flow_model.gaussian_process.args.dims[0]
     rs = [resolution]
     l = len(rs)
     label_error = np.zeros((len(test_replay_buffer), l, args.num_constraints))

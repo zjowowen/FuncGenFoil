@@ -127,9 +127,25 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=args.length_scale,
-                    nu=args.nu,
-                    dims=[257],
+                    type= args.kernel_type,
+                    args = {
+                        "matern": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            nu=args.nu,
+                            dims=[257],
+                        ),
+                        "rbf": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            dims=[257],
+                        ),
+                        "white": dict(
+                            device=device,
+                            noise_level=args.noise_level,
+                            dims=[257],
+                        ),
+                    }.get(args.kernel_type, None)                   
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -382,7 +398,7 @@ def main(args):
 
                 gt = gt.reshape(-1, 1, 257)  # (b,1,257)
                 gaussian_prior = flow_model.gaussian_process.sample_from_prior(
-                    dims=config.flow_model.gaussian_process.dims,
+                    dims=config.flow_model.gaussian_process.args.dims,
                     n_samples=gt.shape[0],
                     n_channels=gt.shape[1],
                 )
@@ -431,7 +447,7 @@ def main(args):
                     train_dataset_std[None, :] + 1e-8
                 )  # (b,15)
                 sample_trajectory = flow_model.sample_process(
-                    n_dims=config.flow_model.gaussian_process.dims,
+                    n_dims=config.flow_model.gaussian_process.args.dims,
                     n_channels=1,
                     t_span=torch.linspace(0.0, 1.0, 1000),
                     batch_size=1,
@@ -534,7 +550,7 @@ if __name__ == "__main__":
         "-l",
         default=0.03,
         type=float,
-        help="Matérn kernel length_scale",
+        help="length_scale of Matérn kernel and rbf kernel default = 1 if rbf else 0.03 ",
     )
 
     argparser.add_argument(
@@ -542,6 +558,20 @@ if __name__ == "__main__":
         default=2.5,
         type=float,
         help="Matérn kernel nu",
+    )
+
+    argparser.add_argument(
+        "--noise_level",
+        default=1.0,
+        type=float,
+        help="noise_level of white kernel ",
+    )
+
+    argparser.add_argument(
+        "--kernel_type",
+        default="matern",
+        type=str,
+        help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
     args = argparser.parse_args()

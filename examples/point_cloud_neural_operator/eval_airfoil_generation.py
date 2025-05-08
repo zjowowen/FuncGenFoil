@@ -1,3 +1,4 @@
+import argparse
 import os
 import torch.multiprocessing as mp
 
@@ -6,6 +7,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import numpy as np
 import torch
@@ -17,19 +19,105 @@ from accelerate.state import AcceleratorState
 from accelerate.utils import set_seed
 
 from rich.progress import track
+from tqdm import tqdm
 from easydict import EasyDict
 
-from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import Dataset, AF200KDataset
+from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
+from airfoil_generation.dataset.parsec_direct_n11 import Fit_airfoil_11
 
 from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
-from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 
 from airfoil_generation.neural_networks.point_cloud_neural_operator import (
     compute_Fourier_modes,
 )
+
+from scipy.spatial.distance import pdist, squareform
+
+
+def render_video_3x3_polish(
+    data_list,
+    video_save_path,
+    iteration,
+    train_dataset_max,
+    train_dataset_min,
+    fps=30,  # Lower FPS for artistic, slower animation
+    dpi=150,  # Higher DPI for crispness
+):
+    if not os.path.exists(video_save_path):
+        os.makedirs(video_save_path)
+
+    # Use a modern matplotlib style
+    plt.style.use("seaborn-v0_8-dark-palette")
+
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
+    frames = len(data_list)
+
+    fig, axs = plt.subplots(3, 3, figsize=(10, 10))
+    fig.patch.set_facecolor("#11131b")  # deep dark background
+
+    # Choose a beautiful colormap
+    color_map = cm.get_cmap("magma", 9)
+    scatter_map = cm.get_cmap("cool", 9)
+
+    def update(frame_idx):
+        data = data_list[frame_idx].squeeze()
+        for j, ax in enumerate(axs.flat):
+            ax.clear()
+            ax.set_xlim([0, 1])
+            ax.set_ylim([-0.1, 0.1])
+            ax.set_facecolor("#1b1d2b")
+
+            # Remove axis ticks and spines for minimalism
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+            # Calculate y values
+            y = (data[j, :] + 1) / 2 * (
+                train_dataset_max[1] - train_dataset_min[1]
+            ) + train_dataset_min[1]
+
+            # Plot with smooth, thick, semi-transparent line
+            ax.plot(
+                xs,
+                y,
+                lw=2.5,
+                color=color_map(j),
+                alpha=0.85,
+                solid_capstyle="round",
+            )
+            # Scatter with lower alpha, slightly larger size for glow effect
+            ax.scatter(
+                xs,
+                y,
+                s=12,
+                c=[scatter_map(j)],
+                edgecolors="none",
+                alpha=0.28,
+                zorder=3,
+            )
+
+            # Optional: Add a soft grid for depth
+            ax.grid(
+                visible=True, color="#2a2e42", linestyle="--", linewidth=0.5, alpha=0.3
+            )
+
+        return []
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=range(frames), interval=1000 / fps, blit=False
+    )
+
+    save_path = os.path.join(video_save_path, f"iteration_{iteration}.mp4")
+    ani.save(save_path, fps=fps, dpi=dpi, writer="ffmpeg")
+
+    plt.close(fig)
+    plt.clf()
+    print(f"Saved video to {save_path}")
 
 
 def render_video_3x3(
@@ -50,7 +138,7 @@ def render_video_3x3(
     frames = len(data_list)
 
     # Create figure with 3x3 subplots
-    fig, axs = plt.subplots(3, 3, figsize=(8, 8))
+    fig, axs = plt.subplots(3, 3, figsize=(27, 27))
 
     def update(frame_idx):
         data = data_list[frame_idx].squeeze()
@@ -93,8 +181,59 @@ def render_video_3x3(
     print(f"Saved video to {save_path}")
 
 
-def main(args):
+def calculate_smoothness(airfoil):
+    smoothness = 0.0
+    num_points = airfoil.shape[0]
 
+    for i in range(num_points):
+        p_idx = (i - 1) % num_points
+        q_idx = (i + 1) % num_points
+
+        p = airfoil[p_idx]
+        q = airfoil[q_idx]
+
+        if p[0] == q[0]:  # 处理垂直于x轴的线段
+            distance = abs(airfoil[i, 0] - p[0])
+        else:
+            m = (q[1] - p[1]) / (q[0] - p[0])
+            b = p[1] - m * p[0]
+
+            distance = abs(m * airfoil[i, 0] - airfoil[i, 1] + b) / np.sqrt(m**2 + 1)
+
+        smoothness += distance
+
+    return smoothness
+
+
+def cal_diversity_score(data, subset_size=10, sample_times=10):
+    # Average log determinant
+    N = data.shape[0]
+    data = data.reshape(N, -1)
+    mean_logdet = 0
+    for i in range(sample_times):
+        ind = np.random.choice(N, size=subset_size, replace=False)
+        subset = data[ind]
+        D = squareform(pdist(subset, "euclidean"))
+        S = np.exp(-0.5 * np.square(D))
+        (sign, logdet) = np.linalg.slogdet(S)
+        mean_logdet += logdet
+    return mean_logdet / sample_times
+
+
+def cal_mean(arr):
+    # 计算去掉最大和最小5%数据后的平均值
+    percentile_5 = np.percentile(arr, 5)
+    percentile_95 = np.percentile(arr, 95)
+
+    # 过滤数据
+    filtered_data = arr[(arr > percentile_5) & (arr < percentile_95)]
+
+    # 计算剩余数据的平均值
+    mean_value = filtered_data.mean()
+    return mean_value
+
+
+def main(args):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
     accelerator = Accelerator(
         log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
@@ -178,7 +317,9 @@ def main(args):
                         )
                     )
                 ),
-                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
+                warmup_steps=(
+                    2000 if args.dataset == "supercritical" else 20000 // 1024 * 2000
+                ),
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
@@ -192,7 +333,7 @@ def main(args):
                 ),
                 video_save_path=f"output/{project_name}/videos",
                 model_save_path=f"output/{project_name}/models",
-                model_load_path=None,
+                model_load_path=args.model_path,
             ),
         )
     )
@@ -226,19 +367,7 @@ def main(args):
 
         flow_model.model.load_state_dict(new_state_dict)
         print(f"Load model from {config.parameter.model_load_path} successfully!")
-
-    optimizer = torch.optim.Adam(
-        flow_model.model.parameters(), lr=config.parameter.learning_rate
-    )
-
-    scheduler = CosineAnnealingWarmupLR(
-        optimizer,
-        T_max=config.parameter.iterations,
-        eta_min=2e-6,
-        warmup_steps=config.parameter.warmup_steps,
-    )
-
-    flow_model.model, optimizer = accelerator.prepare(flow_model.model, optimizer)
+    flow_model.model = accelerator.prepare(flow_model.model)
 
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
@@ -454,7 +583,7 @@ def main(args):
 
     test_replay_buffer = TensorDictReplayBuffer(
         storage=point_cloud_test_dataset.storage,
-        batch_size=9,
+        batch_size=1,
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=False),
         prefetch=10,
     )
@@ -462,132 +591,176 @@ def main(args):
     iteration_per_epoch = len(point_cloud_train_dataset.storage) // batch_size + 1
 
     accelerator.init_trackers(project_name, config=config)
-    accelerator.print("✨ Start training ...")
+    accelerator.print("✨ Start evaluation ...")
+
+    flow_model.eval()
+    resolution = config.flow_model.gaussian_process.dims[0]
+    rs = [resolution]
+    l = len(rs)
+    label_error = np.zeros((len(test_replay_buffer), l, args.num_constraints))
+    smoothness = np.zeros(
+        (
+            len(test_replay_buffer),
+            l,
+        )
+    )
+    diversity = np.zeros(
+        (
+            len(test_replay_buffer),
+            l,
+        )
+    )
 
     mp_list = []
 
-    for iteration in track(
-        range(1, config.parameter.iterations + 1),
-        description="Training",
+    for i in track(
+        range(len(test_dataset.storage)),
+        description="Evaluating",
         disable=not accelerator.is_local_main_process,
     ):
-        flow_model.train()
-        with accelerator.autocast():
-            with accelerator.accumulate(flow_model.model):
-                data = train_replay_buffer.sample()
-                data = data.to(device)
-                gt = (data["y"] - train_dataset.min.to(device)[1]) / (
-                    train_dataset.max.to(device)[1] - train_dataset.min.to(device)[1]
-                ) * 2 - 1  # (b,257,1)
-                data["condition"]["params"] = (
-                    (data["condition"]["params"] - train_dataset_mean[None, :])
-                    / (train_dataset_std[None, :] + 1e-8)
-                ).to(
-                    torch.float32
-                )  # (b,15)
 
-                gt = gt.to(device).to(torch.float32)
+        data = test_replay_buffer.sample().to(device)
 
-                gt_reshape = gt.reshape(-1, 1, 257)  # (b,1,257)
-                gaussian_prior = flow_model.gaussian_process.sample_from_prior(
-                    dims=config.flow_model.gaussian_process.dims,
-                    n_samples=gt_reshape.shape[0],
-                    n_channels=gt_reshape.shape[1],
-                )
-                loss = flow_model.functional_flow_matching_loss(
-                    x0=gaussian_prior,
-                    x1=gt_reshape,
-                    condition=data["condition"],
-                )
-                optimizer.zero_grad()
-                accelerator.backward(loss)
-                optimizer.step()
+        data_for_sample = data.clone()
 
-                scheduler.step()
+        data_for_sample["condition"]["params"] = (
+            (data_for_sample["condition"]["params"][:, :] - train_dataset_mean[None, :])
+            / (train_dataset_std[None, :] + 1e-8)
+        ).to(
+            torch.float32
+        )  # (b,15)
 
-        loss = accelerator.gather(loss)
-        if iteration % config.parameter.log_rate == 0:
-            if accelerator.is_local_main_process:
-                to_log = {
-                    "loss/mean": loss.mean().item(),
-                    "iteration": iteration,
-                    "epoch": iteration // iteration_per_epoch,
-                    "lr": scheduler.get_last_lr()[0],
-                }
-
-                if len(loss.shape) == 0:
-                    to_log["loss/std"] = 0
-                    to_log["loss/0"] = loss.item()
-                elif loss.shape[0] > 1:
-                    to_log["loss/std"] = loss.std().item()
-                    for i in range(loss.shape[0]):
-                        to_log[f"loss/{i}"] = loss[i].item()
-                accelerator.log(
-                    to_log,
-                    step=iteration,
-                )
-            acc_train_loss = loss.mean().item()
-            print(
-                f"iteration: {iteration}, train_loss: {acc_train_loss:.5f}, lr: {scheduler.get_last_lr()[0]:.7f}"
+        priors = []
+        for r in rs:
+            priors.append(
+                flow_model.gaussian_process.sample(dims=[r], n_samples=20, n_channels=1)
             )
 
-        if iteration % config.parameter.eval_rate == 0:
-            flow_model.eval()
-            with torch.no_grad():
-                data = test_replay_buffer.sample()
-                data = data.to(device)
-                data["condition"]["params"] = (
-                    (data["condition"]["params"][:, :] - train_dataset_mean[None, :])
-                    / (train_dataset_std[None, :] + 1e-8)
-                ).to(
-                    torch.float32
-                )  # (b,15)
-                sample_trajectory = flow_model.sample_process(
-                    n_dims=config.flow_model.gaussian_process.dims,
-                    n_channels=1,
-                    t_span=torch.linspace(0.0, 1.0, 100),
-                    condition=data["condition"],
-                )
-                # sample_trajectory is of shape (T, B, C, D)
+        sample_trajectorys = []
+        for r, prior in zip(rs, priors):
+            sample_trajectory = flow_model.sample_process(
+                n_dims=[r],
+                n_channels=1,
+                t_span=torch.linspace(0.0, 1.0, 100),
+                batch_size=1,
+                x_0=prior,
+                condition=data_for_sample["condition"].repeat(20),
+                with_grad=False,
+            )
 
-                data_list = [
-                    x.squeeze(0).cpu().numpy()
+            # figure_list = [
+            #     x.squeeze(0).cpu().numpy()
+            #     for x in torch.split(
+            #         sample_trajectory, split_size_or_sections=1, dim=0
+            #     )
+            # ]
+
+            # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+            # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+
+            # p = mp.Process(
+            #     target=render_video_3x3,
+            #     args=(
+            #         figure_list,
+            #         args.project_name,
+            #         i,
+            #         train_dataset.max.cpu().numpy(),
+            #         train_dataset.min.cpu().numpy(),
+            #     ),
+            #     daemon=True,
+            # )
+            # p.start()
+            # mp_list.append(p)
+
+            sample_trajectorys.append(sample_trajectory)
+
+        data_list_list = []
+        for sample_trajectory in sample_trajectorys:
+            data_list_list.append(
+                [
+                    x.squeeze(0).detach().cpu().numpy()
                     for x in torch.split(
                         sample_trajectory, split_size_or_sections=1, dim=0
                     )
                 ]
+            )
 
-                # render_video_3x3(data_list, "output", iteration)
-                p = mp.Process(
-                    target=render_video_3x3,
-                    args=(
-                        data_list,
-                        "output",
-                        iteration,
-                        train_dataset.max.cpu().numpy(),
-                        train_dataset.min.cpu().numpy(),
-                    ),
-                    daemon=True,
+        label_error_ = np.zeros((l, args.num_constraints))
+        smoothness_ = np.zeros((l,))
+
+        for j, data_list in enumerate(data_list_list):
+            data_list_ = []
+            airfoils = data_list[-1][0, :, 0, :]
+
+            for airfoil in airfoils:
+                airfoil = (airfoil + 1) / 2 * (
+                    train_dataset.max.cpu().numpy()[1]
+                    - train_dataset.min.cpu().numpy()[1]
+                ) + train_dataset.min.cpu().numpy()[1]
+                data_list_.append(airfoil)
+                xs = (np.cos(np.linspace(0, 2 * np.pi, airfoil.shape[-1])) + 1) / 2
+                if args.num_constraints == 11:
+                    parsec_params = Fit_airfoil_11(
+                        np.stack([xs, airfoil], axis=-1)
+                    ).parsec_features
+                elif args.num_constraints == 15:
+                    parsec_params = Fit_airfoil_15(
+                        np.stack([xs, airfoil], axis=-1)
+                    ).parsec_features
+                else:
+                    raise ValueError(
+                        f"num_constraints {args.num_constraints} not supported"
+                    )
+                label_error_[j] += np.abs(
+                    parsec_params
+                    - data["condition"]["params"].reshape(-1).cpu().numpy()
                 )
-                p.start()
-                mp_list.append(p)
+                smoothness_[j] += calculate_smoothness(np.stack([xs, airfoil], axis=-1))
 
-        if iteration % config.parameter.checkpoint_rate == 0:
+            label_error_[j] /= len(airfoils)
+            smoothness_[j] /= len(airfoils)
+            label_error[i, j] = label_error_[j]
+            smoothness[i, j] = smoothness_[j]
+            data_list_ = np.array(data_list_)
+            diversity[i, j] = cal_diversity_score(data_list_)
+            # print(np.mean(label_error[i,j]), label_error[i,j], smoothness[i,j], diversity[i,j])
 
-            if accelerator.is_local_main_process:
-                if not os.path.exists(config.parameter.model_save_path):
-                    os.makedirs(config.parameter.model_save_path)
-                torch.save(
-                    accelerator.unwrap_model(flow_model.model).state_dict(),
-                    f"{config.parameter.model_save_path}/model_{iteration}.pth",
-                )
+    np.save(f"output/{project_name}/label_error.npy", label_error)
+    np.save(f"output/{project_name}/smoothness.npy", smoothness)
+    np.save(f"output/{project_name}/diversity.npy", diversity)
 
-        accelerator.wait_for_everyone()
+    log_msg = {}
+    for i, r in enumerate(rs):
+        print("Resolution: ", r)
+        index = 0
+        for arr in label_error[:, i, :].T:
+            index += 1
+            print(f"label error {index}: {cal_mean(arr)}")
+            log_msg[f"label error {i}-{index}"] = cal_mean(arr)
 
-    for p in mp_list:
-        p.join()
+        # compute arithmetic mean of label error
+        arithmetic_mean_error = np.mean(label_error[:, i, :], axis=-1)
+        print(f"mean label error (arithmetic) : {cal_mean(arithmetic_mean_error)}")
+        log_msg[f"mean label error {i}"] = cal_mean(arithmetic_mean_error)
+        # compute geometric mean of label error
+        geometric_mean_error = np.abs(np.prod(label_error[:, i, :], axis=-1)) ** (
+            1 / label_error.shape[2]
+        )
+        print(f"mean label error (geometric) : {cal_mean(geometric_mean_error)}")
+        log_msg[f"mean label error (geometric) {i}"] = cal_mean(geometric_mean_error)
 
-    accelerator.print("✨ Training complete!")
+        print(f"mean smoothness: {cal_mean(smoothness[:,i])}")
+        print(f"mean diversity: {cal_mean(diversity[:,i])}")
+
+        log_msg[f"mean smoothness {i}"] = cal_mean(smoothness[:, i])
+        log_msg[f"mean diversity {i}"] = cal_mean(diversity[:, i])
+
+    if args.wandb:
+        accelerator.log(log_msg, step=0)
+
+    accelerator.wait_for_everyone()
+
+    accelerator.print("✨ Evaluation complete!")
     accelerator.end_training()
 
 
@@ -603,6 +776,7 @@ if __name__ == "__main__":
         choices=["supercritical", "af200k"],
         help="Choose a dataset.",
     )
+    argparser.add_argument("--model_path", "-p", type=str, help="Model load path.")
     argparser.add_argument(
         "--dataset_names",
         type=lambda s: s.split(","),
@@ -626,7 +800,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--project_name",
         type=str,
-        default="airfoil-conditional-training-with-PCNO",
+        default="airfoil-evaluation-with-PCNO",
         help="Project name",
     )
     argparser.add_argument(

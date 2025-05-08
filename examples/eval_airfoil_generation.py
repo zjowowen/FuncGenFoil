@@ -410,12 +410,21 @@ def main(args):
             index += 1
             print(f"label error {index}: {cal_mean(arr)}")
             log_msg[f"label error {i}-{index}"] = cal_mean(arr)
-        print(f"mean label error: {cal_mean(np.mean(label_error[:,i,:], axis=-1))}")
+
+        # compute arithmetic mean of label error
+        arithmetic_mean_error = np.mean(label_error[:, i, :], axis=-1)
+        print(f"mean label error (arithmetic) : {cal_mean(arithmetic_mean_error)}")
+        log_msg[f"mean label error {i}"] = cal_mean(arithmetic_mean_error)
+        # compute geometric mean of label error
+        geometric_mean_error = np.abs(np.prod(label_error[:, i, :], axis=-1)) ** (
+            1 / label_error.shape[2]
+        )
+        print(f"mean label error (geometric) : {cal_mean(geometric_mean_error)}")
+        log_msg[f"mean label error (geometric) {i}"] = cal_mean(geometric_mean_error)
+
         print(f"mean smoothness: {cal_mean(smoothness[:,i])}")
         print(f"mean diversity: {cal_mean(diversity[:,i])}")
-        log_msg[f"mean label error {i}"] = cal_mean(
-            np.mean(label_error[:, i, :], axis=-1)
-        )
+
         log_msg[f"mean smoothness {i}"] = cal_mean(smoothness[:, i])
         log_msg[f"mean diversity {i}"] = cal_mean(diversity[:, i])
 

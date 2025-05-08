@@ -149,9 +149,21 @@ def main(args):
                 batch_size=1024,
                 learning_rate=5e-5 * accelerator.num_processes,
                 iterations=(
-                    20000 // 1024 * 2000
-                    if args.dataset == "supercritical"
-                    else 200000 // 1024 * 2000
+                    args.iterations
+                    if args.iterations is not None
+                    else (
+                        args.epoch * 20000 // 1024
+                        if args.epoch is not None and args.dataset == "supercritical"
+                        else (
+                            args.epoch * 200000 // 1024
+                            if args.epoch is not None and args.dataset == "af200k"
+                            else (
+                                20000 // 1024 * 2000
+                                if args.dataset == "supercritical"
+                                else 200000 // 1024 * 2000
+                            )
+                        )
+                    )
                 ),
                 warmup_steps=2000 if args.dataset == "supercritical" else 20000,
                 log_rate=100,
@@ -427,6 +439,20 @@ if __name__ == "__main__":
         type=str,
         default="airfoil-unconditional-training",
         help="Project name",
+    )
+    argparser.add_argument(
+        "--iterations",
+        "-i",
+        default=None,
+        type=int,
+        help="Number of training iterations.",
+    )
+    argparser.add_argument(
+        "--epoch",
+        "-e",
+        default=None,
+        type=int,
+        help="Number of training epochs.",
     )
 
     args = argparser.parse_args()

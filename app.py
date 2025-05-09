@@ -521,6 +521,7 @@ def generate_airfoil_from_geometry_params(resolution, *args):
             t_span=torch.linspace(0.0, 1.0, 1000),
             batch_size=1,
             x_0=prior_x,
+            with_grad=False,
             condition=y.to(device).repeat(1, 1),
         )
     )
@@ -924,9 +925,13 @@ with gr.Blocks() as demo:
             unconditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -960,9 +965,13 @@ with gr.Blocks() as demo:
             flow_model_regression=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -996,9 +1005,13 @@ with gr.Blocks() as demo:
             conditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.03,
+                        nu=2.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",

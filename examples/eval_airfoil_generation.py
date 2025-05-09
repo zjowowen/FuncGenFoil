@@ -190,9 +190,25 @@ def main(args):
             flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
-                    dims=[257],
+                    type=args.kernel_type,
+                    args={
+                        "matern": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            nu=args.nu,
+                            dims=[257],
+                        ),
+                        "rbf": dict(
+                            device=device,
+                            length_scale=args.length_scale,
+                            dims=[257],
+                        ),
+                        "white": dict(
+                            device=device,
+                            noise_level=args.noise_level,
+                            dims=[257],
+                        ),
+                    }.get(args.kernel_type, None),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -609,6 +625,34 @@ if __name__ == "__main__":
         "--render",
         action="store_true",
         help="Whether to render the video",
+    )
+    argparser.add_argument(
+        "--length_scale",
+        "-l",
+        default=0.03,
+        type=float,
+        help="length_scale of Matérn kernel and rbf kernel default = 1 if rbf else 0.03 ",
+    )
+
+    argparser.add_argument(
+        "--nu",
+        default=2.5,
+        type=float,
+        help="Matérn kernel nu",
+    )
+
+    argparser.add_argument(
+        "--noise_level",
+        default=1.0,
+        type=float,
+        help="noise_level of white kernel ",
+    )
+
+    argparser.add_argument(
+        "--kernel_type",
+        default="matern",
+        type=str,
+        help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
     args = argparser.parse_args()

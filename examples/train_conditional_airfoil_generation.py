@@ -279,9 +279,7 @@ def main(args):
                         )
                     )
                 ),
-                warmup_steps=(
-                    2000 if args.dataset == "supercritical" else 20000 // 1024 * 2000
-                ),
+                warmup_steps=2000,
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500

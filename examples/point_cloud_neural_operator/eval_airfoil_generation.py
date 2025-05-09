@@ -757,7 +757,7 @@ def main(args):
         # compute arithmetic mean of label error
         arithmetic_mean_error = np.mean(label_error[:, i, :], axis=-1)
         print(f"mean label error (arithmetic) : {cal_mean(arithmetic_mean_error)}")
-        log_msg[f"mean label error {i}"] = cal_mean(arithmetic_mean_error)
+        log_msg[f"mean label error (arithmetic) {i}"] = cal_mean(arithmetic_mean_error)
         # compute geometric mean of label error
         geometric_mean_error = np.abs(np.prod(label_error[:, i, :], axis=-1)) ** (
             1 / label_error.shape[2]

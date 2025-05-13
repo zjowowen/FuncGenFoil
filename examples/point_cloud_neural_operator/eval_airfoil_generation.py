@@ -250,7 +250,7 @@ def main(args):
     print(f"Process rank: {process_rank}")
 
     ndims = 1
-    kx_max = 64
+    kx_max = args.modes
     Lx = 1.0
     modes = compute_Fourier_modes(ndims, [kx_max], [Lx])
     modes = torch.tensor(modes, dtype=torch.float).to(device)
@@ -883,6 +883,13 @@ if __name__ == "__main__":
         default=10,
         type=int,
         help="number of time steps to sample",
+    )
+
+    argparser.add_argument(
+        "--modes",
+        default=64,
+        type=int,
+        help="Number of modes in Fourier Neural Operator",
     )
 
     args = argparser.parse_args()

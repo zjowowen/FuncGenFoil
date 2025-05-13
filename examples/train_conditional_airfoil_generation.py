@@ -245,7 +245,7 @@ def main(args):
                         backbone=dict(
                             type="FourierNeuralOperator",
                             args=dict(
-                                modes=64,
+                                modes=args.modes,
                                 vis_channels=1,
                                 hidden_channels=256,
                                 proj_channels=128,
@@ -670,6 +670,13 @@ if __name__ == "__main__":
         default="matern",
         type=str,
         help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
+    )
+
+    argparser.add_argument(
+        "--modes",
+        default=64,
+        type=int,
+        help="Number of modes in Fourier Neural Operator",
     )
 
     args = argparser.parse_args()

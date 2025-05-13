@@ -716,9 +716,16 @@ def main(args):
                 data_list_.append(airfoil)
                 xs = (np.cos(np.linspace(0, 2 * np.pi, airfoil.shape[-1])) + 1) / 2
                 if args.num_constraints == 11:
-                    parsec_params = Fit_airfoil_11(
-                        np.stack([xs, airfoil], axis=-1)
-                    ).parsec_features
+                    try:
+                        parsec_params = Fit_airfoil_11(
+                            np.stack([xs, airfoil], axis=-1)
+                        ).parsec_features
+                    except:
+                        print(airfoil)
+                        import matplotlib.pyplot as plt
+                        plt.plot(xs, airfoil)
+                        plt.savefig("debug.png")
+                        raise ValueError("Fit airfoil 11 failed")
                 elif args.num_constraints == 15:
                     parsec_params = Fit_airfoil_15(
                         np.stack([xs, airfoil], axis=-1)

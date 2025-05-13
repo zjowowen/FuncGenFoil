@@ -448,7 +448,7 @@ def main(args):
             sample_trajectory = flow_model.sample_process(
                 n_dims=[r],
                 n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 10),
+                t_span=torch.linspace(0.0, 1.0, args.t_span),
                 batch_size=1,
                 x_0=prior,
                 condition=y.repeat(20, 1),
@@ -653,6 +653,13 @@ if __name__ == "__main__":
         default="matern",
         type=str,
         help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
+    )
+
+    argparser.add_argument(
+        "--t_span",
+        default=10,
+        type=int,
+        help="number of time steps to sample",
     )
 
     args = argparser.parse_args()

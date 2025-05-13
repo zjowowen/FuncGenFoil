@@ -713,7 +713,6 @@ def main(args):
                     train_dataset.max.cpu().numpy()[1]
                     - train_dataset.min.cpu().numpy()[1]
                 ) + train_dataset.min.cpu().numpy()[1]
-                data_list_.append(airfoil)
                 xs = (np.cos(np.linspace(0, 2 * np.pi, airfoil.shape[-1])) + 1) / 2
                 if args.num_constraints == 11:
                     try:
@@ -721,11 +720,7 @@ def main(args):
                             np.stack([xs, airfoil], axis=-1)
                         ).parsec_features
                     except:
-                        print(airfoil)
-                        import matplotlib.pyplot as plt
-                        plt.plot(xs, airfoil)
-                        plt.savefig("debug.png")
-                        raise ValueError("Fit airfoil 11 failed")
+                        continue
                 elif args.num_constraints == 15:
                     parsec_params = Fit_airfoil_15(
                         np.stack([xs, airfoil], axis=-1)
@@ -734,6 +729,7 @@ def main(args):
                     raise ValueError(
                         f"num_constraints {args.num_constraints} not supported"
                     )
+                data_list_.append(airfoil)
                 label_error_[j] += np.abs(
                     parsec_params
                     - data["condition"]["params"].reshape(-1).cpu().numpy()

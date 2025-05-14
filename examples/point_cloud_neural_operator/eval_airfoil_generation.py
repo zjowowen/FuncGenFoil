@@ -220,13 +220,13 @@ def cal_diversity_score(data, subset_size=10, sample_times=10):
     return mean_logdet / sample_times
 
 
-def cal_mean(arr):
+def cal_mean(arr, remove_max_percent=100, remove_min_percent=0):
     # 计算去掉最大和最小5%数据后的平均值
-    percentile_5 = np.percentile(arr, 5)
-    percentile_95 = np.percentile(arr, 95)
+    percentile_min = np.percentile(arr, remove_min_percent)
+    percentile_max = np.percentile(arr, remove_max_percent)
 
     # 过滤数据
-    filtered_data = arr[(arr > percentile_5) & (arr < percentile_95)]
+    filtered_data = arr[(arr >= percentile_min) & (arr <= percentile_max)]
 
     # 计算剩余数据的平均值
     mean_value = filtered_data.mean()

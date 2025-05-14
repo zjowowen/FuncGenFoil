@@ -791,7 +791,7 @@ if __name__ == "__main__":
     )
 
     argparse.add_argument(
-        "activate_differential_operator",
+        "--activate_differential_operator",
         default=True,
         type=bool,
         help="Whether to activate differential operator",

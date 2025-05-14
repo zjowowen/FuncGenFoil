@@ -811,6 +811,7 @@ class PointCloudNeuralOperator(nn.Module):
         out_dim=1,
         train_sp_L="independently",
         act="gelu",
+        activate_differential_operator=True,
     ):
         super(PointCloudNeuralOperator, self).__init__()
 
@@ -889,12 +890,14 @@ class PointCloudNeuralOperator(nn.Module):
             ]
         )
 
-        self.gws = nn.ModuleList(
-            [
-                nn.Conv1d(ndims * in_size, out_size, 1)
-                for in_size, out_size in zip(self.layers, self.layers[1:])
-            ]
-        )
+        self.activate_differential_operator = activate_differential_operator
+        if activate_differential_operator:
+            self.gws = nn.ModuleList(
+                [
+                    nn.Conv1d(ndims * in_size, out_size, 1)
+                    for in_size, out_size in zip(self.layers, self.layers[1:])
+                ]
+            )
 
         if fc_dim > 0:
             self.fc1 = nn.Linear(layers[-1], fc_dim)
@@ -986,11 +989,14 @@ class PointCloudNeuralOperator(nn.Module):
         for i, (speconv, w, gw) in enumerate(zip(self.sp_convs, self.ws, self.gws)):
             x1 = speconv(x, bases_c, bases_s, bases_0, wbases_c, wbases_s, wbases_0)
             x2 = w(x)
-            x3 = gw(
-                self.softsign(
-                    compute_gradient(x, directed_edges, edge_gradient_weights)
+            if self.activate_differential_operator:
+                x3 = gw(
+                    self.softsign(
+                        compute_gradient(x, directed_edges, edge_gradient_weights)
+                    )
                 )
-            )
+            else:
+                x3 = 0
             x = x1 + x2 + x3
             if self.act is not None and i != length - 1:
                 x = self.act(x)

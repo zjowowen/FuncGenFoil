@@ -790,7 +790,7 @@ if __name__ == "__main__":
         help="Number of modes in Fourier Neural Operator",
     )
 
-    argparse.add_argument(
+    argparser.add_argument(
         "--activate_differential_operator",
         default=True,
         type=bool,

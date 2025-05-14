@@ -557,6 +557,11 @@ def main(args):
             print(f"label error {index} Filtered: {label_error_filtered_i}")
             log_msg[f"label error {i}-{index} Filtered"] = label_error_filtered_i
 
+            # print the maxium error of each label
+            max_index = np.argsort(arr)[-9:]
+            print(f"label error {index} max: {arr[max_index]}, index: {max_index}")
+
+
         # compute arithmetic mean of label error
         arithmetic_mean_error = np.mean(mean_label_error_list)
         print(f"label error (arithmetic mean) : {arithmetic_mean_error}")
@@ -580,11 +585,11 @@ def main(args):
         print(f"label error (geometric mean) Filtered: {geometric_mean_error_filtered}")
         log_msg[f"label error (geometric mean) {i} Filtered"] = geometric_mean_error_filtered
 
-        print(f"mean smoothness: {smoothness[:,i]}")
-        print(f"mean diversity: {diversity[:,i]}")
+        print(f"mean smoothness: {np.mean(smoothness[:,i])}")
+        print(f"mean diversity: {np.mean(diversity[:,i])}")
 
-        log_msg[f"mean smoothness {i}"] = smoothness[:, i]
-        log_msg[f"mean diversity {i}"] = diversity[:, i]
+        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:,i])
+        log_msg[f"mean diversity {i}"] = np.mean(diversity[:, i])
 
     if args.wandb:
         accelerator.log(log_msg, step=0)

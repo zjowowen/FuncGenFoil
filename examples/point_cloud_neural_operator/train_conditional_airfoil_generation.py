@@ -251,6 +251,7 @@ def main(args):
                                 out_dim=1,
                                 train_sp_L="independently",
                                 act="gelu",
+                                activate_differential_operator=args.activate_differential_operator,
                             ),
                         ),
                     ),
@@ -787,6 +788,13 @@ if __name__ == "__main__":
         default=64,
         type=int,
         help="Number of modes in Fourier Neural Operator",
+    )
+
+    argparse.add_argument(
+        "activate_differential_operator",
+        default=True,
+        type=bool,
+        help="Whether to activate differential operator",
     )
 
     args = argparser.parse_args()

@@ -155,13 +155,13 @@ def cal_diversity_score(data, subset_size=10, sample_times=10):
     return mean_logdet / sample_times
 
 
-def cal_mean(arr):
+def cal_mean(arr, remove_max_percent=100, remove_min_percent=0):
     # 计算去掉最大和最小5%数据后的平均值
-    percentile_5 = np.percentile(arr, 5)
-    percentile_95 = np.percentile(arr, 95)
+    percentile_min = np.percentile(arr, remove_min_percent)
+    percentile_max = np.percentile(arr, remove_max_percent)
 
     # 过滤数据
-    filtered_data = arr[(arr > percentile_5) & (arr < percentile_95)]
+    filtered_data = arr[(arr >= percentile_min) & (arr <= percentile_max)]
 
     # 计算剩余数据的平均值
     mean_value = filtered_data.mean()
@@ -537,30 +537,54 @@ def main(args):
     np.save(f"output/{project_name}/diversity.npy", diversity)
 
     log_msg = {}
+
     for i, r in enumerate(rs):
         print("Resolution: ", r)
         index = 0
+
+        mean_label_error_list = []
+        mean_label_error_filtered_list = []
         for arr in label_error[:, i, :].T:
             index += 1
-            print(f"label error {index}: {cal_mean(arr)}")
-            log_msg[f"label error {i}-{index}"] = cal_mean(arr)
+
+            label_error_i = np.mean(arr)
+            mean_label_error_list.append(label_error_i)
+            label_error_filtered_i = cal_mean(arr, remove_max_percent=args.remove_max_percent)
+            mean_label_error_filtered_list.append(label_error_filtered_i)
+
+            print(f"label error {index}: {label_error_i}")
+            log_msg[f"label error {i}-{index}"] = label_error_i
+            print(f"label error {index} Filtered: {label_error_filtered_i}")
+            log_msg[f"label error {i}-{index} Filtered"] = label_error_filtered_i
 
         # compute arithmetic mean of label error
-        arithmetic_mean_error = np.mean(label_error[:, i, :], axis=-1)
-        print(f"mean label error (arithmetic) : {cal_mean(arithmetic_mean_error)}")
-        log_msg[f"mean label error (arithmetic) {i}"] = cal_mean(arithmetic_mean_error)
+        arithmetic_mean_error = np.mean(mean_label_error_list)
+        print(f"label error (arithmetic mean) : {arithmetic_mean_error}")
+        log_msg[f"label error (arithmetic mean) {i}"] = arithmetic_mean_error
+
+        arithmetic_mean_error_filtered = np.mean(mean_label_error_filtered_list)
+        print(f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}")
+        log_msg[f"label error (arithmetic mean) {i} Filtered"] = arithmetic_mean_error_filtered
+
+
         # compute geometric mean of label error
-        geometric_mean_error = np.abs(np.prod(label_error[:, i, :], axis=-1)) ** (
+        geometric_mean_error = np.abs(np.prod(mean_label_error_list)) ** (
             1 / label_error.shape[2]
         )
-        print(f"mean label error (geometric) : {cal_mean(geometric_mean_error)}")
-        log_msg[f"mean label error (geometric) {i}"] = cal_mean(geometric_mean_error)
+        print(f"label error (geometric mean) : {geometric_mean_error}")
+        log_msg[f"label error (geometric mean) {i}"] = geometric_mean_error
 
-        print(f"mean smoothness: {cal_mean(smoothness[:,i])}")
-        print(f"mean diversity: {cal_mean(diversity[:,i])}")
+        geometric_mean_error_filtered = np.abs(np.prod(mean_label_error_filtered_list)) ** (
+            1 / label_error.shape[2]
+        )
+        print(f"label error (geometric mean) Filtered: {geometric_mean_error_filtered}")
+        log_msg[f"label error (geometric mean) {i} Filtered"] = geometric_mean_error_filtered
 
-        log_msg[f"mean smoothness {i}"] = cal_mean(smoothness[:, i])
-        log_msg[f"mean diversity {i}"] = cal_mean(diversity[:, i])
+        print(f"mean smoothness: {smoothness[:,i]}")
+        print(f"mean diversity: {diversity[:,i]}")
+
+        log_msg[f"mean smoothness {i}"] = smoothness[:, i]
+        log_msg[f"mean diversity {i}"] = diversity[:, i]
 
     if args.wandb:
         accelerator.log(log_msg, step=0)
@@ -667,6 +691,19 @@ if __name__ == "__main__":
         default=64,
         type=int,
         help="Number of modes in Fourier Neural Operator",
+    )
+
+    argparser.add_argument(
+        "--remove_max_percent",
+        default=100,
+        type=float,
+        help="remove max percent of data when calculating mean",
+    )
+    argparser.add_argument(
+        "--remove_min_percent",
+        default=0,
+        type=float,
+        help="remove min percent of data when calculating mean",
     )
 
     args = argparser.parse_args()

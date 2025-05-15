@@ -272,7 +272,7 @@ def main(args):
                             (
                                 args.epoch * 200000 // 1024
                                 if args.dataset_names != ['interpolated_uiuc']
-                                else args.epoch * 2000 // 1024
+                                else args.epoch * 2048 // 1024
                             )
                             if args.epoch is not None and args.dataset == "af200k"
                             else (
@@ -281,7 +281,7 @@ def main(args):
                                 else (
                                     200000 // 1024 * 2000
                                     if args.dataset_names != ['interpolated_uiuc']
-                                    else 2000 // 1024 * 2000
+                                    else 2048 // 1024 * 2000
                                 )
                             )
                         )
@@ -295,7 +295,7 @@ def main(args):
                     else (
                         200000 // 1024 * 500
                         if args.dataset_names != ['interpolated_uiuc']
-                        else 2000 // 1024 * 500
+                        else 2048 // 1024 * 500
                     )
                 ),
                 checkpoint_rate=(
@@ -304,7 +304,7 @@ def main(args):
                     else (
                         200000 // 1024 * 500
                         if args.dataset_names != ['interpolated_uiuc']
-                        else 2000 // 1024 * 500
+                        else 2048 // 1024 * 500
                     )
                 ),
                 video_save_path=f"output/{project_name}/videos",

@@ -898,6 +898,8 @@ class PointCloudNeuralOperator(nn.Module):
                     for in_size, out_size in zip(self.layers, self.layers[1:])
                 ]
             )
+        else:
+            self.gws = [None] * (len(self.layers) - 1)
 
         if fc_dim > 0:
             self.fc1 = nn.Linear(layers[-1], fc_dim)

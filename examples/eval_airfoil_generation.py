@@ -214,6 +214,7 @@ def main(args):
                     type="ODESolver",
                     args=dict(
                         library="torchdiffeq",
+                        ode_solver=args.ode_solver,
                     ),
                 ),
                 path=dict(
@@ -684,6 +685,7 @@ if __name__ == "__main__":
         help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
+
     argparser.add_argument(
         "--t_span",
         default=10,
@@ -709,6 +711,12 @@ if __name__ == "__main__":
         default=0,
         type=float,
         help="remove min percent of data when calculating mean",
+    )
+    argparser.add_argument(
+        "--ode_solver",
+        default="euler",
+        type=str,
+        help="ODE solver to use, euler, rk4, midpoint",
     )
 
     args = argparser.parse_args()

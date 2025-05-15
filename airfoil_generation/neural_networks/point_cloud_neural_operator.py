@@ -892,7 +892,6 @@ class PointCloudNeuralOperator(nn.Module):
 
         self.activate_differential_operator = activate_differential_operator
         if activate_differential_operator:
-            print("activate_differential_operator")
             self.gws = nn.ModuleList(
                 [
                     nn.Conv1d(ndims * in_size, out_size, 1)
@@ -991,7 +990,6 @@ class PointCloudNeuralOperator(nn.Module):
             x1 = speconv(x, bases_c, bases_s, bases_0, wbases_c, wbases_s, wbases_0)
             x2 = w(x)
             if self.activate_differential_operator:
-                print("using differential operator")
                 x3 = gw(
                     self.softsign(
                         compute_gradient(x, directed_edges, edge_gradient_weights)

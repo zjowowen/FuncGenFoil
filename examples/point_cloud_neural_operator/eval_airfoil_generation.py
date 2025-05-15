@@ -307,7 +307,7 @@ def main(args):
                                 out_dim=1,
                                 train_sp_L="independently",
                                 act="gelu",
-                                activate_differential_operator=args.activate_differential_operator,
+                                activate_differential_operator=not args.deactivate_differential_operator,
                             ),
                         ),
                     ),
@@ -925,9 +925,8 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument(
-        "--activate_differential_operator",
-        default=True,
-        type=bool,
+        "--deactivate_differential_operator",
+        action="store_true",
         help="Whether to activate differential operator",
     )
 

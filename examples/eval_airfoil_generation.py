@@ -449,7 +449,7 @@ def main(args):
             sample_trajectory = flow_model.sample_process(
                 n_dims=[r],
                 n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, args.t_span),
+                t_span=torch.linspace(0.0, args.t_end, args.t_span),
                 batch_size=1,
                 x_0=prior,
                 condition=y.repeat(20, 1),
@@ -692,7 +692,12 @@ if __name__ == "__main__":
         type=int,
         help="number of time steps to sample",
     )
-
+    argparser.add_argument(
+        "--t_end",
+        default=1.0,
+        type=float,
+        help="time end for ODE solver",
+    )
     argparser.add_argument(
         "--modes",
         default=64,

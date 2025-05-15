@@ -292,12 +292,20 @@ def main(args):
                 eval_rate=(
                     20000 // 1024 * 500
                     if args.dataset == "supercritical"
-                    else 200000 // 1024 * 500
+                    else (
+                        200000 // 1024 * 500
+                        if args.dataset_names != ['interpolated_uiuc']
+                        else 2000 // 1024 * 500
+                    )
                 ),
                 checkpoint_rate=(
                     20000 // 1024 * 500
                     if args.dataset == "supercritical"
-                    else 200000 // 1024 * 500
+                    else (
+                        200000 // 1024 * 500
+                        if args.dataset_names != ['interpolated_uiuc']
+                        else 2000 // 1024 * 500
+                    )
                 ),
                 video_save_path=f"output/{project_name}/videos",
                 model_save_path=f"output/{project_name}/models",

@@ -269,12 +269,20 @@ def main(args):
                         args.epoch * 20000 // 1024
                         if args.epoch is not None and args.dataset == "supercritical"
                         else (
-                            args.epoch * 200000 // 1024
+                            (
+                                args.epoch * 200000 // 1024
+                                if args.dataset_names != ['interpolated_uiuc']
+                                else args.epoch * 2000 // 1024
+                            )
                             if args.epoch is not None and args.dataset == "af200k"
                             else (
                                 20000 // 1024 * 2000
                                 if args.dataset == "supercritical"
-                                else 200000 // 1024 * 2000
+                                else (
+                                    200000 // 1024 * 2000
+                                    if args.dataset_names != ['interpolated_uiuc']
+                                    else 2000 // 1024 * 2000
+                                )
                             )
                         )
                     )

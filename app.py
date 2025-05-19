@@ -1244,11 +1244,11 @@ with gr.Blocks() as demo:
                 "Inverse prior initialization",
                 "Random latent function initialization",
             ],
-            value="Zero latent function initialization",
+            value="Inverse prior initialization",
             label="Latent Function Initialization",
         )
 
-    btn_3 = gr.Button("Generate random constraints")
+    btn_3 = gr.Button("Generate airfoil fitting constraints")
 
     with gr.Row():
         # plot_3 = gr.Plot(label="Airfoil Editing (Edited)")

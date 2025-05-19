@@ -22,12 +22,12 @@ English | [简体中文(Simplified Chinese)](https://github.com/zjowowen/FuncGen
 
 Demonstration of airfoil generation model training and inference in function space.
 <p align="center">
-  <img src="assets/airfoil_generation.png" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_generation.png" alt="Image Description 1" width="100%" height="auto" style="margin: 0 1%;">
 </p>
 
 Demonstration of airfoil editing model training and inference in function space.
 <p align="center">
-  <img src="assets/airfoil_editing.png" alt="Image Description 2" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_editing.png" alt="Image Description 2" width="100%" height="auto" style="margin: 0 1%;">
 </p>
 
 ## Installation

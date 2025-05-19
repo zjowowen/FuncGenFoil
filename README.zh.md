@@ -22,12 +22,12 @@
 
 在函数空间中训练和推理翼型生成模型的演示。
 <p align="center">
-  <img src="assets/airfoil_generation.png" alt="Image Description 1" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_generation.png" alt="airfoil generation model training and inference" width="100%" height="auto" style="margin: 0 1%;">
 </p>
 
 在函数空间中训练和推理翼型编辑模型的演示。
 <p align="center">
-  <img src="assets/airfoil_editing.png" alt="Image Description 2" width="80%" height="auto" style="margin: 0 1%;">
+  <img src="assets/airfoil_editing.png" alt="airfoil editing model training and inference" width="100%" height="auto" style="margin: 0 1%;">
 </p>
 
 ## 安装

@@ -1,3 +1,6 @@
+import datetime
+import argparse
+
 import os
 import torch.multiprocessing as mp
 
@@ -215,6 +218,12 @@ def main(args):
                             dims=[257],
                         ),
                     }.get(args.kernel_type, None),
+                ),
+                solver=dict(
+                    type="ODESolver",
+                    args=dict(
+                        library="torchdiffeq",
+                    ),
                 ),
                 path=dict(
                     sigma=1e-4,
@@ -516,6 +525,12 @@ if __name__ == "__main__":
         type=str,
         choices=["supercritical", "af200k"],
         help="Choose a dataset.",
+    )
+    argparser.add_argument(
+        "--dataset_names",
+        type=lambda s: s.split(","),
+        default=[],
+        help="Type of the data to be used, default is all the data in the dataset.",
     )
     argparser.add_argument(
         "--data_path", "-dp", default="data", type=str, help="Dataset path."

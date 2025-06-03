@@ -10,7 +10,7 @@ from easydict import EasyDict
 from airfoil_generation.model.probability_path import ConditionalProbabilityPath
 from airfoil_generation.model.intrinsic_model import IntrinsicModel
 from airfoil_generation.model.stochastic_process import StochasticProcess
-from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
+from airfoil_generation.dataset.toy_dataset import get_gaussian_process
 from airfoil_generation.numerical_solvers import ODESolver
 from airfoil_generation.numerical_solvers import get_solver
 from airfoil_generation.utils import find_parameters
@@ -43,8 +43,8 @@ class FunctionalFlow(nn.Module):
         self.path = ConditionalProbabilityPath(config.path)
         self.model = IntrinsicModel(config.model.args) if model is None else model
 
-        self.gaussian_process = MaternGaussianProcess(
-            device=self.device, **config.gaussian_process
+        self.gaussian_process = get_gaussian_process(
+            config.gaussian_process.type, **config.gaussian_process.args
         )
         self.stochastic_process = StochasticProcess(self.path, self.gaussian_process)
 
@@ -887,8 +887,8 @@ class FunctionalFlowForRegression(nn.Module):
         self.path = ConditionalProbabilityPath(config.path)
         self.model = IntrinsicModel(config.model.args) if model is None else model
 
-        self.gaussian_process = MaternGaussianProcess(
-            device=self.device, **config.gaussian_process
+        self.gaussian_process = get_gaussian_process(
+            config.gaussian_process.type, **config.gaussian_process.args
         )
         self.stochastic_process = StochasticProcess(self.path, self.gaussian_process)
 

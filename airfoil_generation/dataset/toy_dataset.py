@@ -3,7 +3,13 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
-from sklearn.gaussian_process.kernels import Matern,RBF,WhiteKernel,ConstantKernel,RationalQuadratic
+from sklearn.gaussian_process.kernels import (
+    Matern,
+    RBF,
+    WhiteKernel,
+    ConstantKernel,
+    RationalQuadratic,
+)
 
 
 def make_2d_grid(dims, x_min=0, x_max=1):
@@ -85,7 +91,7 @@ def matern_kernel_cov(grids, length_scale, nu):
     """
     Overview:
         Create a Matern kernel covariance matrix for a given grid of points.
-        
+
     Arguments:
         - grids (tensor): grid of points, for example, [n_points, 1 or 2]
         - length_scale (float): length scale of the kernel
@@ -93,7 +99,7 @@ def matern_kernel_cov(grids, length_scale, nu):
     Returns:
         - kernel (tensor): Matern kernel covariance matrix
     """
-    
+
     kernel = 1.0 * Matern(length_scale=length_scale, length_scale_bounds="fixed", nu=nu)
     return kernel(grids)
 
@@ -113,7 +119,7 @@ def rbf_kernel_cov(grids, length_scale):
     kernel = 1.0 * RBF(length_scale=length_scale, length_scale_bounds="fixed")
     return kernel(grids)
 
-    
+
 def white_kernel_cov(grids, noise_level):
     """
     Overview:
@@ -131,17 +137,19 @@ def white_kernel_cov(grids, noise_level):
     kernel = 1.0 * WhiteKernel(noise_level=noise_level, noise_level_bounds="fixed")
     # Compute the covariance matrix for the given grid
     return kernel(grids)
-    
+
 
 def get_gaussian_process(kernel_type, **kwargs):
     if kernel_type == "matern":
         return MaternGaussianProcess(**kwargs)
     elif kernel_type == "rbf":
         return RBFGaussianProcess(**kwargs)
-    elif kernel_type=="white":
+    elif kernel_type == "white":
         return WhiteGaussianProcess(**kwargs)
     else:
-        raise ValueError(f"Unsupported kernel_type '{kernel_type}'. Supported types are: 'matern', 'rbf', 'white'.")
+        raise ValueError(
+            f"Unsupported kernel_type '{kernel_type}'. Supported types are: 'matern', 'rbf', 'white'."
+        )
 
 
 class MaternGaussianProcess(torch.distributions.distribution.Distribution):
@@ -170,7 +178,7 @@ class MaternGaussianProcess(torch.distributions.distribution.Distribution):
         """
 
         jitter = 1e-6
-        n_points = np.prod(dims)  
+        n_points = np.prod(dims)
         grids = make_grid(dims)
         matern_ker = matern_kernel_cov(grids, length_scale, nu)
 
@@ -343,7 +351,7 @@ class RBFGaussianProcess(torch.distributions.distribution.Distribution):
         """
 
         jitter = 1e-6
-        n_points = np.prod(dims)  #计算 dims 列表中所有元素的乘积，即网格中点的总数。
+        n_points = np.prod(dims)  # 计算 dims 列表中所有元素的乘积，即网格中点的总数。
         grids = make_grid(dims)
         rbf_ker = rbf_kernel_cov(grids, length_scale)
 
@@ -352,9 +360,7 @@ class RBFGaussianProcess(torch.distributions.distribution.Distribution):
 
         base_mu = torch.zeros(n_points).float().to(device)
         # add jitter
-        base_cov = torch.tensor(rbf_ker).float() + jitter * torch.eye(
-            rbf_ker.shape[0]
-        )
+        base_cov = torch.tensor(rbf_ker).float() + jitter * torch.eye(rbf_ker.shape[0])
         base_cov = base_cov.to(torch.float64).to(
             device
         )  # can help improve numerical stability
@@ -381,9 +387,7 @@ class RBFGaussianProcess(torch.distributions.distribution.Distribution):
         rbf_ker = rbf_kernel_cov(grids, self.length_scale)
 
         base_mu = torch.zeros(n_points).float().to(self.device)
-        base_cov = torch.tensor(rbf_ker).float() + jitter * torch.eye(
-            rbf_ker.shape[0]
-        )
+        base_cov = torch.tensor(rbf_ker).float() + jitter * torch.eye(rbf_ker.shape[0])
         base_cov = base_cov.to(torch.float64).to(self.device)
 
         base_dist = torch.distributions.MultivariateNormal(
@@ -490,6 +494,7 @@ class RBFGaussianProcess(torch.distributions.distribution.Distribution):
         logp = distr.log_prob(x)
         return logp
 
+
 class WhiteGaussianProcess(torch.distributions.distribution.Distribution):
     """
     Overview:
@@ -514,11 +519,11 @@ class WhiteGaussianProcess(torch.distributions.distribution.Distribution):
         """
 
         jitter = 1e-6
-        n_points = np.prod(dims)  #计算 dims 列表中所有元素的乘积，即网格中点的总数。
+        n_points = np.prod(dims)  # 计算 dims 列表中所有元素的乘积，即网格中点的总数。
         grids = make_grid(dims)
         white_kernel = white_kernel_cov(grids, noise_level)
         self.noise_level = noise_level
- 
+
         self.dims = dims
 
         base_mu = torch.zeros(n_points).float().to(device)

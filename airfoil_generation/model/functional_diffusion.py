@@ -24,6 +24,72 @@ from airfoil_generation.numerical_solvers import get_solver
 from airfoil_generation.utils import find_parameters
 
 
+class EnergyGuidance(nn.Module):
+    """
+    Overview:
+        Energy Guidance for Energy Conditional Diffusion Model.
+    Interfaces:
+        ``__init__``, ``forward``, ``calculate_energy_guidance``
+    """
+
+    def __init__(self, config: EasyDict):
+        """
+        Overview:
+            Initialization of Energy Guidance.
+
+        Arguments:
+            config (:obj:`EasyDict`): The configuration.
+        """
+        super().__init__()
+        self.config = config
+        self.model = IntrinsicModel(self.config)
+
+    def forward(
+        self,
+        t: torch.Tensor,
+        x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+        condition: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Overview:
+            Return output of Energy Guidance.
+
+        Arguments:
+            t (:obj:`torch.Tensor`): The input time.
+            x (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input.
+            condition (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input condition.
+        """
+
+        return self.model(t, x, condition)
+
+    def calculate_energy_guidance(
+        self,
+        t: torch.Tensor,
+        x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+        condition: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor] = None,
+        guidance_scale: float = 1.0,
+    ) -> Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]:
+        """
+        Overview:
+            Calculate the guidance for sampling.
+
+        Arguments:
+            t (:obj:`torch.Tensor`): The input time.
+            x (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input.
+            condition (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input condition.
+            guidance_scale (:obj:`float`): The scale of guidance.
+        Returns:
+            guidance (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The guidance for sampling.
+        """
+
+        # TODO: make it compatible with TensorDict
+        with torch.enable_grad():
+            x.requires_grad_(True)
+            x_t = self.forward(t, x, condition)
+            guidance = guidance_scale * torch.autograd.grad(torch.sum(x_t), x)[0]
+        return guidance.detach()
+
+
 class FunctionalDiffusion(nn.Module):
     """
     Overview:
@@ -70,6 +136,12 @@ class FunctionalDiffusion(nn.Module):
             config.gaussian_process.type, **config.gaussian_process.args
         )
         self.stochastic_process = StochasticProcess(self.path, self.gaussian_process)
+
+        self.energy_guidance = (
+            EnergyGuidance(self.config.energy_guidance)
+            if hasattr(config, "energy_guidance")
+            else None
+        )
 
         if hasattr(config, "solver"):
             self.solver = get_solver(config.solver.type)(**config.solver.args)
@@ -859,7 +931,7 @@ class FunctionalDiffusion(nn.Module):
     def functional_flow_matching_loss(
         self,
         x0: torch.Tensor,
-        x1: torch.Tensor,
+        x1: torch.Tensor = None,
         condition: torch.Tensor = None,
         average: bool = True,
         sum_all_elements: bool = True,
@@ -877,6 +949,16 @@ class FunctionalDiffusion(nn.Module):
             - loss (torch.Tensor): functional flow matching loss
         """
 
+        def get_batch_size_and_device(x):
+            if isinstance(x, torch.Tensor):
+                return x.shape[0], x.device
+            elif isinstance(x, TensorDict):
+                return x.shape, x.device
+            elif isinstance(x, treetensor.torch.Tensor):
+                return list(x.values())[0].shape[0], list(x.values())[0].device
+            else:
+                raise NotImplementedError("Unknown type of x {}".format(type))
+
         def get_loss(velocity_value, velocity):
             if average:
                 return torch.mean(
@@ -888,15 +970,179 @@ class FunctionalDiffusion(nn.Module):
                 else:
                     return 0.5 * (velocity_value - velocity) ** 2
 
-        batch_size = x0.shape[0]
-        t_random = (
-            torch.rand(batch_size, device=self.device) * self.stochastic_process.t_max
-        )
-        x_t = self.stochastic_process.direct_sample(t_random, x0, x1)
+        if self.model_type == "noise_function":
+            eps = 1e-5
+            batch_size, device = get_batch_size_and_device(x0)
+            t_random = (
+                torch.rand(batch_size, device=device)
+                * (self.diffusion_process.t_max - eps)
+                + eps
+            )
+            if x1 is None:
+                noise = self.gaussian_process.sample_from_prior(
+                    dims=x0.shape[2:],
+                    n_samples=x0.shape[0],
+                    n_channels=x0.shape[1],
+                )
+            else:
+                noise = x1
+            std = self.diffusion_process.std(t_random, x0)
+            x_t = self.diffusion_process.scale(t_random, x0) * x0 + std * noise
+            velocity_value = (
+                self.diffusion_process.drift(t_random, x_t)
+                + 0.5
+                * self.diffusion_process.diffusion_squared(t_random, x_t)
+                * self.model(t_random, x_t, condition=condition)
+                / std
+            )
+            velocity = self.diffusion_process.velocity(t_random, x0, noise=noise)
+            loss = get_loss(velocity_value, velocity)
+            return loss
+        elif self.model_type == "score_function":
+            eps = 1e-5
+            batch_size, device = get_batch_size_and_device(x0)
+            t_random = (
+                torch.rand(batch_size, device=device)
+                * (self.diffusion_process.t_max - eps)
+                + eps
+            )
+            if x1 is None:
+                noise = self.gaussian_process.sample_from_prior(
+                    dims=x0.shape[2:],
+                    n_samples=x0.shape[0],
+                    n_channels=x0.shape[1],
+                )
+            else:
+                noise = x1
+            std = self.diffusion_process.std(t_random, x0)
+            x_t = self.diffusion_process.scale(t_random, x0) * x0 + std * noise
+            velocity_value = self.diffusion_process.drift(
+                t_random, x_t
+            ) - 0.5 * self.diffusion_process.diffusion_squared(
+                t_random, x_t
+            ) * self.model(
+                t_random, x_t, condition=condition
+            )
+            velocity = self.diffusion_process.velocity(t_random, x0, noise=noise)
+            loss = get_loss(velocity_value, velocity)
+            return loss
+        elif self.model_type == "velocity_function":
+            eps = 1e-5
+            batch_size, device = get_batch_size_and_device(x0)
+            t_random = (
+                torch.rand(batch_size, device=device)
+                * (self.diffusion_process.t_max - eps)
+                + eps
+            )
+            if x1 is None:
+                noise = self.gaussian_process.sample_from_prior(
+                    dims=x0.shape[2:],
+                    n_samples=x0.shape[0],
+                    n_channels=x0.shape[1],
+                )
+            else:
+                noise = x1
+            std = self.diffusion_process.std(t_random, x0)
+            x_t = self.diffusion_process.scale(t_random, x0) * x0 + std * noise
+            velocity_value = self.model(t_random, x_t, condition=condition)
+            velocity = self.diffusion_process.velocity(t_random, x0, noise=noise)
+            loss = get_loss(velocity_value, velocity)
+            return loss
+        elif self.model_type == "data_prediction_function":
+            # TODO: check if this is correct
+            eps = 1e-5
+            batch_size, device = get_batch_size_and_device(x0)
+            t_random = (
+                torch.rand(batch_size, device=device)
+                * (self.diffusion_process.t_max - eps)
+                + eps
+            )
+            if x1 is None:
+                noise = self.gaussian_process.sample_from_prior(
+                    dims=x0.shape[2:],
+                    n_samples=x0.shape[0],
+                    n_channels=x0.shape[1],
+                )
+            else:
+                noise = x1
+            std = self.diffusion_process.std(t_random, x0)
+            x_t = self.diffusion_process.scale(t_random, x0) * x0 + std * noise
+            D = (
+                0.5
+                * self.diffusion_process.diffusion_squared(t_random, x0)
+                / self.diffusion_process.covariance(t_random, x0)
+            )
+            velocity_value = (
+                self.diffusion_process.drift_coefficient(t_random, x_t) + D
+            ) * x_t - D * self.diffusion_process.scale(t_random, x_t) * self.model(
+                t_random, x_t, condition=condition
+            )
+            velocity = self.diffusion_process.velocity(t_random, x0, noise=noise)
+            loss = get_loss(velocity_value, velocity)
+            return loss
+        else:
+            raise NotImplementedError(
+                "Unknown type of velocity function {}".format(type)
+            )
 
-        velocity_value = self.velocity_function_.forward(
-            model=self.model, t=t_random, x=x_t, condition=condition
+    def energy_guidance_loss(
+        self,
+        energy_model: Union[torch.nn.Module, Callable],
+        x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+        condition: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor] = None,
+    ):
+        """
+        Overview:
+            The loss function for training Energy Guidance, CEP guidance method, as proposed in the paper \
+            "Contrastive Energy Prediction for Exact Energy-Guided Diffusion Sampling in Offline Reinforcement Learning"
+
+        Arguments:
+            energy_model (:obj:`Union[torch.nn.Module, Callable]`): The energy model to compute the energy of the input.
+            x (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input.
+            condition (:obj:`Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]`): The input condition.        
+        """
+        eps = 1e-4
+        t_random = torch.rand((x.shape[0],), device=self.device) * (1.0 - eps) + eps
+        t_random = torch.stack([t_random] * x.shape[1], dim=1)
+        if condition is not None:
+            condition_repeat = torch.stack([condition] * x.shape[1], axis=1)
+            condition_repeat_reshape = condition_repeat.reshape(
+                condition_repeat.shape[0] * condition_repeat.shape[1],
+                *condition_repeat.shape[2:]
+            )
+            x_reshape = x.reshape(x.shape[0] * x.shape[1], *x.shape[2:])
+            energy = energy_model(x_reshape, condition_repeat_reshape).detach()
+            energy = energy.reshape(x.shape[0], x.shape[1]).squeeze(dim=-1)
+        else:
+            x_reshape = x.reshape(x.shape[0] * x.shape[1], *x.shape[2:])
+            energy = energy_model(x_reshape).detach()
+            energy = energy.reshape(x.shape[0], x.shape[1]).squeeze(dim=-1)
+        x_t = self.diffusion_process.direct_sample(t_random, x, condition)
+        if condition is not None:
+            condition_repeat = torch.stack([condition] * x_t.shape[1], axis=1)
+            condition_repeat_reshape_new = condition_repeat.reshape(
+                condition_repeat.shape[0] * condition_repeat.shape[1],
+                *condition_repeat.shape[2:]
+            )
+            x_t_reshape = x_t.reshape(x_t.shape[0] * x_t.shape[1], *x_t.shape[2:])
+            t_random_reshape = t_random.reshape(t_random.shape[0] * t_random.shape[1])
+            xt_energy_guidance = self.energy_guidance(
+                t_random_reshape, x_t_reshape, condition_repeat_reshape_new
+            )
+            xt_energy_guidance = xt_energy_guidance.reshape(
+                x_t.shape[0], x_t.shape[1]
+            ).squeeze(dim=-1)
+        else:
+            # xt_energy_guidance = self.energy_guidance(t_random, x_t).squeeze(dim=-1)
+            x_t_reshape = x_t.reshape(x_t.shape[0] * x_t.shape[1], *x_t.shape[2:])
+            t_random_reshape = t_random.reshape(t_random.shape[0] * t_random.shape[1])
+            xt_energy_guidance = self.energy_guidance(t_random_reshape, x_t_reshape)
+            xt_energy_guidance = xt_energy_guidance.reshape(
+                x_t.shape[0], x_t.shape[1]
+            ).squeeze(dim=-1)
+        log_xt_relative_energy = nn.LogSoftmax(dim=1)(xt_energy_guidance)
+        x0_relative_energy = nn.Softmax(dim=1)(energy * self.alpha)
+        loss = -torch.mean(
+            torch.sum(x0_relative_energy * log_xt_relative_energy, axis=-1)
         )
-        velocity = self.stochastic_process.velocity(t_random, x0, x1)
-        loss = get_loss(velocity_value, velocity)
         return loss

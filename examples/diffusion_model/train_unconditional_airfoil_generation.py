@@ -428,7 +428,7 @@ def main(args):
                     n_channels=data.shape[1],
                 )
                 loss = diffusion_model.functional_flow_matching_loss(
-                    x0=gaussian_prior, x1=data
+                    x0=data, x1=gaussian_prior
                 )
                 optimizer.zero_grad()
                 accelerator.backward(loss)

@@ -11,7 +11,7 @@ class StochasticProcess:
     Overview:
         Class for describing a stochastic process for generative models.
     Interfaces:
-        ``__init__``, ``mean``, ``std``, ``velocity``, ``direct_sample``, ``direct_sample_with_noise``, ``velocity_SchrodingerBridge``, ``score_SchrodingerBridge``
+        ``__init__``, ``mean``, ``std``, ``velocity``, ``direct_sample``, ``direct_sample_with_noise``
     """
 
     def __init__(

@@ -26,8 +26,8 @@ from airfoil_generation.dataset import Dataset, AF200KDataset
 from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.parsec_direct_n11 import Fit_airfoil_11
 
-from airfoil_generation.model.functional_diffusion import (
-    FunctionalDiffusion,
+from airfoil_generation.model.optimal_transport_functional_flow_model import (
+    OptimalTransportFunctionalFlow,
 )
 
 from scipy.spatial.distance import pdist, squareform
@@ -269,7 +269,7 @@ def main(args):
     config = EasyDict(
         dict(
             device=device,
-            diffusion_model=dict(
+            flow_model=dict(
                 device=device,
                 gaussian_process=dict(
                     type=args.kernel_type,
@@ -299,8 +299,10 @@ def main(args):
                         ode_solver=args.ode_solver,
                     ),
                 ),
-                path=dict(type="gvp"),
-                reverse_path=dict(type="gvp"),
+                path=dict(
+                    sigma=1e-4,
+                    device=device,
+                ),
                 model=dict(
                     type="velocity_function",
                     args=dict(
@@ -362,8 +364,8 @@ def main(args):
         )
     )
 
-    diffusion_model = FunctionalDiffusion(
-        config=config.diffusion_model,
+    flow_model = OptimalTransportFunctionalFlow(
+        config=config.flow_model,
     )
 
     if config.parameter.model_load_path is not None and os.path.exists(
@@ -389,9 +391,9 @@ def main(args):
                 new_key = key
             new_state_dict[new_key] = value
 
-        diffusion_model.model.load_state_dict(new_state_dict)
+        flow_model.model.load_state_dict(new_state_dict)
         print(f"Load model from {config.parameter.model_load_path} successfully!")
-    diffusion_model.model = accelerator.prepare(diffusion_model.model)
+    flow_model.model = accelerator.prepare(flow_model.model)
 
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
@@ -488,8 +490,8 @@ def main(args):
     accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start evaluation ...")
 
-    diffusion_model.eval()
-    resolution = config.diffusion_model.gaussian_process.args.dims[0]
+    flow_model.eval()
+    resolution = config.flow_model.gaussian_process.args.dims[0]
     rs = [resolution]
     l = len(rs)
     label_error = np.zeros((len(test_replay_buffer), l, args.num_constraints))
@@ -521,12 +523,12 @@ def main(args):
         priors = []
         for r in rs:
             priors.append(
-                diffusion_model.gaussian_process.sample(dims=[r], n_samples=36, n_channels=1)
+                flow_model.gaussian_process.sample(dims=[r], n_samples=36, n_channels=1)
             )
 
         sample_trajectorys = []
         for r, prior in zip(rs, priors):
-            sample_trajectory = diffusion_model.sample_process(
+            sample_trajectory = flow_model.sample_process(
                 n_dims=[r],
                 n_channels=1,
                 t_span=torch.linspace(0.0, 1.0, 100),
@@ -639,7 +641,7 @@ if __name__ == "__main__":
 
     argparser.add_argument(
         "--t_span",
-        default=20,
+        default=10,
         type=int,
         help="number of time steps to sample",
     )

@@ -445,7 +445,7 @@ def main(args):
 
                 data_list = [
                     torch.cat([x.squeeze()[:65].cpu(),
-                               ((data["apart"] - train_dataset.min.to(device)) / (
+                               ((data["apart"].squeeze() - train_dataset.min.to(device)) / (
                                     train_dataset.max.to(device) - train_dataset.min.to(device)
                                 ) * 2 - 1)[:, 1].cpu(),
                                x.squeeze()[65:].cpu()]).numpy()

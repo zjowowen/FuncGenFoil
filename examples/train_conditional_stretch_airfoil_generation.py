@@ -317,7 +317,7 @@ def main(args):
     # # Save using safetensors
     # save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
 
-    data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
+    data_matrix = train_dataset["params"]
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
     train_dataset_std = torch.where(
         torch.isnan(train_dataset_std) | torch.isinf(train_dataset_std),

@@ -8,6 +8,7 @@ import torch
 
 from tensordict import TensorDict
 from torchrl.data import LazyTensorStorage, LazyMemmapStorage
+from .stretch_dataset import StretchDataset
 
 
 class Dataset(torch.utils.data.Dataset):

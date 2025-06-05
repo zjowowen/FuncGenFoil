@@ -228,7 +228,7 @@ def main(args):
                 warmup_steps=2000,
                 log_rate=100,
                 eval_rate=(
-                    20000 // 1024 * 1
+                    20000 // 1024 * 500
                     if args.dataset == "supercritical"
                     else (
                         200000 // 1024 * 500
@@ -442,13 +442,6 @@ def main(args):
                     condition=y.repeat(3*3, 1),
                 )
                 # sample_trajectory is of shape (T, B, C, D)
-                print(((data["apart"].squeeze() - train_dataset.min.to(device)) / (
-                                    train_dataset.max.to(device) - train_dataset.min.to(device)
-                                ) * 2 - 1)[:, 1].cpu().shape)
-                print(data["apart"].squeeze().shape)
-                print(((data["apart"].squeeze() - train_dataset.min.to(device)) / (
-                                    train_dataset.max.to(device) - train_dataset.min.to(device)
-                                ) * 2 - 1)[:, 1].cpu().repeat(3*3, 1).shape)
                 data_list = [
                     torch.cat([x.squeeze()[:,:65].cpu(),
                                ((data["apart"].squeeze() - train_dataset.min.to(device)) / (

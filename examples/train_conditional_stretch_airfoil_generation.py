@@ -442,7 +442,15 @@ def main(args):
                     condition=y.repeat(10, 1),
                 )
                 # sample_trajectory is of shape (T, B, C, D)
-
+                
+                # debug tensor shape
+                print(f"sample_trajectory shape: {sample_trajectory.shape}")
+                for x in torch.split(sample_trajectory, split_size_or_sections=1, dim=0):
+                    print(f"x shape: {x.shape}")
+                print(f"data['apart'] shape: {data['apart'].shape}")
+                print(f"train_dataset.min shape: {train_dataset.min.shape}")
+                print(f"train_dataset.max shape: {train_dataset.max.shape}")
+                print(f"x_squeeze shape: {x.squeeze()[:65].shape}")
                 data_list = [
                     torch.cat([x.squeeze()[:65].cpu(),
                                ((data["apart"].squeeze() - train_dataset.min.to(device)) / (

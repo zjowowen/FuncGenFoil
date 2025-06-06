@@ -296,16 +296,16 @@ def main(args):
 
     print(f"Data number: {len(train_dataset)}")
 
-    # # save train_dataset_min and train_dataset_max using safetensors
-    # from safetensors.torch import save_file
-    # # Create a dictionary
-    # tensors_to_save = {
-    #     "train_dataset_min": train_dataset.min,
-    #     "train_dataset_max": train_dataset.max,
-    # }
+    # save train_dataset_min and train_dataset_max using safetensors
+    from safetensors.torch import save_file
+    # Create a dictionary
+    tensors_to_save = {
+        "train_dataset_min": train_dataset.min,
+        "train_dataset_max": train_dataset.max,
+    }
 
-    # # Save using safetensors
-    # save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
+    # Save using safetensors
+    save_file(tensors_to_save, f"output/{project_name}/train_datasets.safetensors")
 
     data_matrix = train_dataset["params"]
     train_dataset_std, train_dataset_mean = torch.std_mean(data_matrix, dim=0)
@@ -317,15 +317,15 @@ def main(args):
     train_dataset_std = train_dataset_std.to(device)
     train_dataset_mean = train_dataset_mean.to(device)
 
-    # # save train_dataset_mean and train_dataset_std using torch.save
-    # stats = {
-    #     "mean": train_dataset_mean,
-    #     "std": train_dataset_std,
-    # }
-    # torch.save(stats, f"output/{project_name}/mean_std.pt")
-    # # load train_dataset_min and train_dataset_max using safetensors
-    # stats = torch.load('mean_std.pt')
-    # train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
+    # save train_dataset_mean and train_dataset_std using torch.save
+    stats = {
+        "mean": train_dataset_mean,
+        "std": train_dataset_std,
+    }
+    torch.save(stats, f"output/{project_name}/mean_std.pt")
+    # load train_dataset_min and train_dataset_max using safetensors
+    stats = torch.load('mean_std.pt')
+    train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
 
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()

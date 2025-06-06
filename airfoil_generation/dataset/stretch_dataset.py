@@ -168,5 +168,3 @@ class StretchDataset(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
     dataset = StretchDataset('test')
-    # dataset = Dataset(split='train', std_cst_augmentation=0.08, num_perturbed_airfoils=10, dataset_names=['supercritical_airfoil', 'data_4000', 'r05', 'r06'], max_size=100000)
-    b = 1

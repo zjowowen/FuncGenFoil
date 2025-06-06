@@ -918,90 +918,10 @@ def generate_airfoil_from_geometry_params_with_finetuning(
 
 with gr.Blocks() as demo:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    project_name = "airfoil-editing-gradio"
+    project_name = "airfoil-stretch-gradio"
     config = EasyDict(
         dict(
             device=device,
-            unconditional_flow_model=dict(
-                device=device,
-                gaussian_process=dict(
-                    type="matern",
-                    args=dict(
-                        device=device,
-                        length_scale=0.01,
-                        nu=1.5,
-                        dims=[257],
-                    ),
-                ),
-                solver=dict(
-                    type="ODESolver",
-                    args=dict(
-                        library="torchdiffeq",
-                    ),
-                ),
-                path=dict(
-                    sigma=1e-4,
-                    device=device,
-                ),
-                model=dict(
-                    type="velocity_function",
-                    args=dict(
-                        backbone=dict(
-                            type="FourierNeuralOperator",
-                            args=dict(
-                                modes=32,
-                                vis_channels=1,
-                                hidden_channels=256,
-                                proj_channels=128,
-                                x_dim=1,
-                                t_scaling=1,
-                                n_layers=4,
-                                n_conditions=0,
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-            flow_model_regression=dict(
-                device=device,
-                gaussian_process=dict(
-                    type="matern",
-                    args=dict(
-                        device=device,
-                        length_scale=0.01,
-                        nu=1.5,
-                        dims=[257],
-                    ),
-                ),
-                solver=dict(
-                    type="ODESolver",
-                    args=dict(
-                        library="torchdiffeq",
-                    ),
-                ),
-                path=dict(
-                    sigma=1e-4,
-                    device=device,
-                ),
-                model=dict(
-                    type="velocity_function",
-                    args=dict(
-                        backbone=dict(
-                            type="FourierNeuralOperator",
-                            args=dict(
-                                modes=32,
-                                vis_channels=1,
-                                hidden_channels=256,
-                                proj_channels=128,
-                                x_dim=1,
-                                t_scaling=1,
-                                n_layers=4,
-                                n_conditions=0,
-                            ),
-                        ),
-                    ),
-                ),
-            ),
             conditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
@@ -1010,7 +930,7 @@ with gr.Blocks() as demo:
                         device=device,
                         length_scale=0.03,
                         nu=2.5,
-                        dims=[257],
+                        dims=[130],
                     ),
                 ),
                 solver=dict(
@@ -1036,7 +956,7 @@ with gr.Blocks() as demo:
                                 x_dim=1,
                                 t_scaling=1,
                                 n_layers=6,
-                                n_conditions=15,
+                                n_conditions=10,
                             ),
                         ),
                     ),

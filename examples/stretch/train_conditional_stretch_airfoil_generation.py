@@ -1,4 +1,3 @@
-import datetime
 import argparse
 
 import os
@@ -6,7 +5,6 @@ import torch.multiprocessing as mp
 
 
 import matplotlib
-
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -14,31 +12,23 @@ from matplotlib import cm
 
 import numpy as np
 import torch
-import torch.nn as nn
 
-from tensordict import TensorDict
 from torchrl.data import TensorDictReplayBuffer
 from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data import SliceSamplerWithoutReplacement, SliceSampler, RandomSampler
 
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.state import AcceleratorState
 from accelerate.utils import set_seed
 
-import wandb
 from rich.progress import track
 from easydict import EasyDict
 
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import StretchDataset
-from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 
 from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
-from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
-from airfoil_generation.dataset.toy_dataset import MaternGaussianProcess
-from airfoil_generation.neural_networks.neural_operator import FourierNeuralOperator
 
 
 def render_video_3x3_polish(
@@ -70,7 +60,7 @@ def render_video_3x3_polish(
         data = data_list[frame_idx].squeeze()
         for j, ax in enumerate(axs.flat):
             ax.clear()
-            ax.set_xlim([0, 1])
+            ax.set_xlim([0, 1.2])
             ax.set_ylim([-0.1, 0.1])
             ax.set_facecolor("#1b1d2b")
 

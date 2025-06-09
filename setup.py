@@ -17,6 +17,7 @@ setup(
     install_requires=[
         'h5py',
         'timm',
+        'gpytorch',
         'neuraloperator',
         'numpy<=1.26.4',
         'torch>=2.2.0',

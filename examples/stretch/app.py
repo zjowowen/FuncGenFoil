@@ -183,11 +183,11 @@ def sample_from_dataset(seed=None):
     return fig, curve_json, *params.tolist(), data
 
 
-def stretch_airfoil(data):
+def stretch_airfoil(data, *params):
     strecth_flow_model.eval()
     with torch.no_grad():
         data = data.to(device)
-        y = (data["params"] - train_dataset_mean.to(device)) / (
+        y = (torch.tensor(params).to(device) - train_dataset_mean.to(device)) / (
             train_dataset_std.to(device) + 1e-8
         )
         sample = strecth_flow_model.sample_process(
@@ -228,8 +228,6 @@ def stretch_airfoil(data):
         angle = theta_degrees
 
         te = (ys_bpart_[0] - ys_bpart_[-1])/2
-        yr = ys_bpart_[65:].max()
-        xr = bpart[65:, 0].cpu().numpy()[np.argmax(ys_bpart_[65:])]
 
         # Calculate the joint derivatives
         temp_data = np.stack([np.concatenate([bpart[:, 0].cpu().numpy()[:65],
@@ -238,16 +236,18 @@ def stretch_airfoil(data):
                               np.concatenate([ys_bpart_[:65],
                                               apart[:, 1].cpu().numpy(),
                                               ys_bpart_[65:]])], axis=1)
+        
         tck, u = splprep(temp_data.T, s=0)
         iLE = 128
-        def objective(u_tmp):
+
+        def objective_joint(u_tmp):
             x_tmp, _ = splev(u_tmp, tck)
             return (x_tmp - 0.6)**2
         uup = optimize.minimize_scalar(
-            objective, bounds=(0, u[iLE]), method="bounded"
+            objective_joint, bounds=(0, u[iLE]), method="bounded"
         ).x
         ulo = optimize.minimize_scalar(
-            objective, bounds=(u[iLE], 1), method="bounded"
+            objective_joint, bounds=(u[iLE], 1), method="bounded"
         ).x
         _, yup = splev(uup, tck)
         dxduup, dyduup = splev(uup, tck, der=1)
@@ -259,6 +259,14 @@ def stretch_airfoil(data):
         d2xdu2lo, d2ydu2lo = splev(ulo, tck, der=2)
         dydxlo = dydulo / dxdulo
         d2ydx2lo = (d2ydu2lo * dxdulo - d2xdu2lo * dydulo) / dxdulo**3
+
+        def objective_rear(u_tmp):
+            _, y_tmp = splev(u_tmp, tck)
+            return -y_tmp
+        ur = optimize.minimize_scalar(
+            objective_rear, bounds=(u[iLE], 1), method="bounded"
+        ).x
+        xr, yr = splev(ur, tck)
 
         return fig, curve_json, angle, te, xr, yr, \
                yup, ylo, dydxup, dydxlo, d2ydx2up, d2ydx2lo
@@ -310,15 +318,15 @@ with gr.Blocks() as demo:
                 ),
             ),
             parameter=dict(
-                stretch_model_load_path="examples\\stretch\\stretch_model.pth",
+                stretch_model_load_path="examples/stretch/stretch_model.pth",
             ),
         )
     )
 
-    loaded_tensors = load_file("examples\\stretch\\train_datasets.safetensors")
+    loaded_tensors = load_file("examples/stretch/train_datasets.safetensors")
     train_dataset_min = loaded_tensors["train_dataset_min"]
     train_dataset_max = loaded_tensors["train_dataset_max"]
-    stats = torch.load("examples\\stretch\\mean_std.pt", map_location=torch.device('cpu'))
+    stats = torch.load("examples/stretch/mean_std.pt", map_location=torch.device('cpu'))
     train_dataset_mean, train_dataset_std = stats["mean"], stats["std"]
 
     strecth_flow_model = init_stretch_flow_model(config, device)
@@ -339,45 +347,45 @@ with gr.Blocks() as demo:
         plot_1 = gr.Plot(label="Selected Airfoil")
         text_1 = gr.Textbox(label="Airfoil Curve Data (JSON Format)", interactive=False)
 
-    gr.Markdown("## Stretch Airfoil")
+    gr.Markdown("## Stretch the chosen airfoil")
 
     gr.Markdown("### Input geometry parameters for stretching")
 
     with gr.Row():
-        joint_y_up_req = gr.Number(value=None, label="Joint Y-coordinate of upper surface (Required)")
-        joint_y_down_req = gr.Number(value=None, label="Joint Y-coordinate of lower surface (Required)")
+        joint_y_up_req = gr.Number(value=None, label="Joint Y-coordinate of upper surface (Required)", interactive=True)
+        joint_y_down_req = gr.Number(value=None, label="Joint Y-coordinate of lower surface (Required)", interactive=True)
     
     with gr.Row():
         joint_y_up_gen = gr.Number(value=None, label="Joint Y-coordinate of upper surface (Generated)")
         joint_y_down_gen = gr.Number(value=None, label="Joint Y-coordinate of lower surface (Generated)")
 
     with gr.Row():
-        joint_dydx_up_req = gr.Number(value=None, label="Joint upper surface slope (Required)")
-        joint_dydx_down_req = gr.Number(value=None, label="Joint lower surface slope (Required)")
+        joint_dydx_up_req = gr.Number(value=None, label="Joint upper surface slope (Required)", interactive=True)
+        joint_dydx_down_req = gr.Number(value=None, label="Joint lower surface slope (Required)", interactive=True)
 
     with gr.Row():
         joint_dydx_up_gen = gr.Number(value=None, label="Joint upper surface slope (Generated)")
         joint_dydx_down_gen = gr.Number(value=None, label="Joint lower surface slope (Generated)")
     
     with gr.Row():
-        joint_d2ydx2_up_req = gr.Number(value=None, label="Joint upper surface second derivative (Required)")
-        joint_d2ydx2_down_req = gr.Number(value=None, label="Joint lower surface second derivative (Required)")
+        joint_d2ydx2_up_req = gr.Number(value=None, label="Joint upper surface second derivative (Required)", interactive=True)
+        joint_d2ydx2_down_req = gr.Number(value=None, label="Joint lower surface second derivative (Required)", interactive=True)
 
     with gr.Row():
         joint_d2ydx2_up_gen = gr.Number(value=None, label="Joint upper surface second derivative (Generated)")
         joint_d2ydx2_down_gen = gr.Number(value=None, label="Joint lower surface second derivative (Generated)")
 
     with gr.Row():
-        angle_req = gr.Number(value=None, label="Upper surface trailing edge angle (Required)")
-        thickness_req = gr.Number(value=None, label="Trailing edge thickness (Required)")
+        angle_req = gr.Number(value=None, label="Upper surface trailing edge angle (Required)", interactive=True)
+        thickness_req = gr.Number(value=None, label="Trailing edge thickness (Required)", interactive=True)
 
     with gr.Row():
         angle_gen = gr.Number(value=None, label="Upper surface trailing edge angle (Generated)")
         thickness_gen = gr.Number(value=None, label="Trailing edge thickness (Generated)")
 
     with gr.Row():
-        xr_req = gr.Number(value=None, label="Rear loading X-coordinate (Required)")
-        yr_req = gr.Number(value=None, label="Rear loading Y-coordinate (Required)")
+        xr_req = gr.Number(value=None, label="Rear loading X-coordinate (Required)", interactive=True)
+        yr_req = gr.Number(value=None, label="Rear loading Y-coordinate (Required)", interactive=True)
 
     with gr.Row():
         xr_gen = gr.Number(value=None, label="Rear loading X-coordinate (Generated)")
@@ -401,7 +409,9 @@ with gr.Blocks() as demo:
 
     btn_stretch.click(
         stretch_airfoil,
-        inputs=[condition],
+        inputs=[condition, angle_req, thickness_req, xr_req, yr_req,
+                joint_y_up_req, joint_y_down_req, joint_dydx_up_req,
+                joint_dydx_down_req, joint_d2ydx2_up_req, joint_d2ydx2_down_req],
         outputs=[plot_2, text_2, angle_gen, thickness_gen, xr_gen, yr_gen,
                  joint_y_up_gen, joint_y_down_gen, joint_dydx_up_gen,
                  joint_dydx_down_gen, joint_d2ydx2_up_gen, joint_d2ydx2_down_gen],

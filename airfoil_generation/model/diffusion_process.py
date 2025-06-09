@@ -918,6 +918,87 @@ class DiffusionProcess:
                 "Unknown type of function {}".format(function_type)
             )
 
+    def reverse_ode_with_energy_guidance(
+        self,
+        function: Union[Callable, nn.Module],
+        function_type: str,
+        energy_guidance_function: Union[Callable, nn.Module],
+        condition: Union[torch.Tensor, TensorDict] = None,
+        T: torch.Tensor = torch.tensor(1.0),
+    ) -> ODE:
+        """
+        Overview:
+            Return the reversed time ODE of the diffusion process with the input condition.
+        """
+
+        if function_type == "score_function":
+
+            def reverse_ode_drift(
+                t: torch.Tensor,
+                x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+            ) -> Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]:
+                return -self.drift(T - t, x, condition) + 0.5 * self.diffusion_squared(
+                    T - t, x, condition
+                ) * (function(T - t, x, condition) + energy_guidance_function(T - t, x))
+
+            return ODE(drift=reverse_ode_drift)
+
+        elif function_type == "noise_function":
+
+            def reverse_ode_drift(
+                t: torch.Tensor,
+                x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+            ) -> Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]:
+                return -self.drift(T - t, x, condition) - 0.5 * self.diffusion_squared(
+                    T - t, x, condition
+                ) * (
+                    function(T - t, x, condition) / self.std(T - t, x, condition)
+                    + energy_guidance_function(T - t, x)
+                )
+
+            return ODE(drift=reverse_ode_drift)
+
+        elif function_type == "velocity_function":
+
+            def reverse_ode_drift(
+                t: torch.Tensor,
+                x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+            ) -> Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]:
+
+                return -function(T - t, x, condition) - 0.5 * self.diffusion_squared(
+                    T - t, x, condition
+                ) * energy_guidance_function(T - t, x)
+
+            return ODE(drift=reverse_ode_drift)
+
+        elif function_type == "data_prediction_function":
+
+            def reverse_ode_drift(
+                t: torch.Tensor,
+                x: Union[torch.Tensor, TensorDict, treetensor.torch.Tensor],
+            ) -> Union[torch.Tensor, TensorDict, treetensor.torch.Tensor]:
+                D = (
+                    0.5
+                    * self.diffusion_squared(T - t, x, condition)
+                    / self.covariance(T - t, x, condition)
+                )
+                return (
+                    -(self.drift_coefficient(T - t, x) + D) * x
+                    + self.scale(T - t, x, condition)
+                    * D
+                    * function(T - t, x, condition)
+                    - 0.5
+                    * self.diffusion_squared(T - t, x, condition)
+                    * energy_guidance_function(T - t, x)
+                )
+
+            return ODE(drift=reverse_ode_drift)
+
+        else:
+            raise NotImplementedError(
+                "Unknown type of function {}".format(function_type)
+            )
+
     def sample(
         self,
         t: torch.Tensor,

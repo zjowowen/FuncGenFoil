@@ -1,9 +1,6 @@
-import math
 import numpy as np
-from numpy.linalg import lstsq
 from scipy.interpolate import splev, splprep
 from scipy import optimize
-from scipy.special import factorial
 from scipy.stats import linregress
 
 
@@ -100,3 +97,66 @@ class Fit_airfoil_11:
         alphate = np.arctan(k1)
         betate = np.arctan(k2)
         return alphate, betate
+
+
+def process_file(args):
+    key, value, parsec_params_path = args
+    feature = Fit_airfoil_11(value)
+    with open(parsec_params_path, "a") as f:
+        f.write(key)
+        f.write(",")
+        f.write(",".join(map(str, feature.parsec_features)))
+        f.write("\n")
+
+
+if __name__ == "__main__":
+
+    import os
+    import sys
+    from multiprocessing import Pool
+    import h5py
+    from tqdm import tqdm
+    import argparse
+
+    # parse data folder from command line
+    parser = argparse.ArgumentParser(description="Parsec Direct N11")
+    parser.add_argument(
+        "--data_folder", type=str, required=True, help="Path to the data folder"
+    )
+    args = parser.parse_args()
+    data_folder = args.data_folder
+
+    def fitparsec(dataset_name):
+        parsec_params_path = (
+            f"{args.data_folder}/{dataset_name}/{dataset_name}_parsec_params_11.txt"
+        )
+        root_path = f"{args.data_folder}/{dataset_name}/{dataset_name}_airfoils.h5"
+
+        if os.path.exists(parsec_params_path):
+            print(f"file {parsec_params_path} already exists, exiting program")
+            sys.exit(1)
+
+        with h5py.File(root_path, "r") as f:
+            minlen = min(map(len, f.keys()))
+            g = (
+                (key, f[key][:], parsec_params_path)
+                for key in f.keys()
+                if len(key) == minlen
+            )
+
+            # Using multiprocessing to speed up the process
+            # with Pool(processes=16) as pool:
+            #     pool.map(
+            #         process_file,
+            #         g
+            #     )
+
+            # do not use multiprocessing:
+            for item in tqdm(g):
+                process_file(item)
+
+    fitparsec("airfoils_test")
+    fitparsec("data_4000")
+    fitparsec("r05")
+    fitparsec("r06")
+    fitparsec("supercritical_airfoil")

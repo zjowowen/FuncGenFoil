@@ -36,7 +36,7 @@ class StretchDataset(torch.utils.data.Dataset):
         self.joint_derivative_order = joint_derivative_order
         N_X = 257
         xs = (np.cos(np.linspace(0, 2 * np.pi, N_X)) + 1) / 2
-        self.keep_indices = (xs > self.apart_before - 1e-4)
+        self.keep_indices = xs > self.apart_before - 1e-4
         self.load_data(dataset_names, folder_path=folder_path)
         self.get_min_max()
 
@@ -56,11 +56,9 @@ class StretchDataset(torch.utils.data.Dataset):
                     name_params = line.strip().split(",")
                     name = name_params[0]
                     self.params[name] = np.array(list(map(float, name_params[1:])))
-            
+
             key_file = os.path.join(
-                folder_path,
-                dataset_name,
-                f"{dataset_name}_{self.split}.txt"
+                folder_path, dataset_name, f"{dataset_name}_{self.split}.txt"
             )
             with open(key_file) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
@@ -71,22 +69,28 @@ class StretchDataset(torch.utils.data.Dataset):
                 f"{dataset_name}_joint_derivs_bpart_before_{int(100*self.bpart_before)}_bpart_after_{int(100*self.bpart_after)}.txt",
             )
             h5_file = os.path.join(
-                folder_path,
-                dataset_name,
-                f"{dataset_name}_airfoils.h5"
+                folder_path, dataset_name, f"{dataset_name}_airfoils.h5"
             )
             if not os.path.exists(joint_derivs_file):
                 with h5py.File(h5_file, "r") as f:
                     key_list = list(f.keys())
                     len_list = list(map(len, key_list))
-                    full_key_list = np.array(key_list)[np.array(len_list) == min(len_list)]
+                    full_key_list = np.array(key_list)[
+                        np.array(len_list) == min(len_list)
+                    ]
                     for key in full_key_list:
-                        temp_data = torch.from_numpy(f[key][:] * (self.stretch_factor, 1))
+                        temp_data = torch.from_numpy(
+                            f[key][:] * (self.stretch_factor, 1)
+                        )
                         tck, u = splprep(temp_data.T, s=0)
                         iLE = 128
+
                         def objective(u_tmp):
                             x_tmp, _ = splev(u_tmp, tck)
-                            return (x_tmp - self.apart_before * self.stretch_factor)**2
+                            return (
+                                x_tmp - self.apart_before * self.stretch_factor
+                            ) ** 2
+
                         uup = optimize.minimize_scalar(
                             objective, bounds=(0, u[iLE]), method="bounded"
                         ).x
@@ -112,14 +116,29 @@ class StretchDataset(torch.utils.data.Dataset):
                 for line in f.readlines():
                     name_derivs = line.strip().split(",")
                     name = name_derivs[0]
-                    self.derivs[name] = np.array(list(map(float, name_derivs[1:2*self.joint_derivative_order+3])))
-            
+                    self.derivs[name] = np.array(
+                        list(
+                            map(
+                                float,
+                                name_derivs[1 : 2 * self.joint_derivative_order + 3],
+                            )
+                        )
+                    )
+
             with h5py.File(h5_file, "r") as f:
                 for key in temp_key_list:
-                    temp_data = torch.from_numpy(f[key][self.keep_indices] * (self.stretch_factor, 1))
-                    temp_data_ = torch.from_numpy(f[key][~self.keep_indices] * (self.stretch_factor, 1))
+                    temp_data = torch.from_numpy(
+                        f[key][self.keep_indices] * (self.stretch_factor, 1)
+                    )
+                    temp_data_ = torch.from_numpy(
+                        f[key][~self.keep_indices] * (self.stretch_factor, 1)
+                    )
                     temp_params = self.params[key][[-6, -5, -4, -3]]
-                    temp_params[0] = np.rad2deg(np.arctan(np.tan(np.deg2rad(temp_params[0]))/self.stretch_factor))
+                    temp_params[0] = np.rad2deg(
+                        np.arctan(
+                            np.tan(np.deg2rad(temp_params[0])) / self.stretch_factor
+                        )
+                    )
                     temp_params[2] = temp_params[2] * self.stretch_factor
                     params = torch.from_numpy(temp_params)
                     temp_derivs = torch.from_numpy(self.derivs[key])
@@ -127,7 +146,9 @@ class StretchDataset(torch.utils.data.Dataset):
                         {
                             "bpart": temp_data.unsqueeze(0),
                             "apart": temp_data_.unsqueeze(0),
-                            "params": torch.cat([params.unsqueeze(0), temp_derivs.unsqueeze(0)], dim=-1),
+                            "params": torch.cat(
+                                [params.unsqueeze(0), temp_derivs.unsqueeze(0)], dim=-1
+                            ),
                         }
                     )
 
@@ -167,4 +188,4 @@ class StretchDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    dataset = StretchDataset('test')
+    dataset = StretchDataset("test")

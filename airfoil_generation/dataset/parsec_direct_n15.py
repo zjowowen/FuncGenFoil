@@ -211,3 +211,66 @@ class Fit_airfoil_15:
     def objective(params, x, y):
         xc, yc, r = params
         return np.sum((np.sqrt((x - xc) ** 2 + (y - yc) ** 2) - r) ** 2)
+
+
+def process_file(args):
+    key, value, parsec_params_path = args
+    feature = Fit_airfoil_15(value)
+    with open(parsec_params_path, "a") as f:
+        f.write(key)
+        f.write(",")
+        f.write(",".join(map(str, feature.parsec_features)))
+        f.write("\n")
+
+
+if __name__ == "__main__":
+
+    import os
+    import sys
+    from multiprocessing import Pool
+    import h5py
+    from tqdm import tqdm
+    import argparse
+
+    # parse data folder from command line
+    parser = argparse.ArgumentParser(description="Parsec Direct N15")
+    parser.add_argument(
+        "--data_folder", type=str, required=True, help="Path to the data folder"
+    )
+    args = parser.parse_args()
+    data_folder = args.data_folder
+
+    def fitparsec(dataset_name):
+        parsec_params_path = (
+            f"{args.data_folder}/{dataset_name}/{dataset_name}_parsec_params_15.txt"
+        )
+        root_path = f"{args.data_folder}/{dataset_name}/{dataset_name}_airfoils.h5"
+
+        if os.path.exists(parsec_params_path):
+            print(f"file {parsec_params_path} already exists, exiting program")
+            sys.exit(1)
+
+        with h5py.File(root_path, "r") as f:
+            minlen = min(map(len, f.keys()))
+            g = (
+                (key, f[key][:], parsec_params_path)
+                for key in f.keys()
+                if len(key) == minlen
+            )
+
+            # Using multiprocessing to speed up the process
+            # with Pool(processes=16) as pool:
+            #     pool.map(
+            #         process_file,
+            #         g
+            #     )
+
+            # do not use multiprocessing:
+            for item in tqdm(g):
+                process_file(item)
+
+    fitparsec("airfoils_test")
+    fitparsec("data_4000")
+    fitparsec("r05")
+    fitparsec("r06")
+    fitparsec("supercritical_airfoil")

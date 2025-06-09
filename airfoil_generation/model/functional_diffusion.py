@@ -142,6 +142,7 @@ class FunctionalDiffusion(nn.Module):
             if hasattr(config, "energy_guidance")
             else None
         )
+        self.alpha = 1
 
         if hasattr(config, "solver"):
             self.solver = get_solver(config.solver.type)(**config.solver.args)
@@ -325,7 +326,7 @@ class FunctionalDiffusion(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)
@@ -724,7 +725,7 @@ class FunctionalDiffusion(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)
@@ -1146,3 +1147,188 @@ class FunctionalDiffusion(nn.Module):
             torch.sum(x0_relative_energy * log_xt_relative_energy, axis=-1)
         )
         return loss
+
+    def sample_with_energy_guidance(
+        self,
+        n_dims: List[int],
+        n_channels: int,
+        t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
+        x_0: torch.Tensor = None,
+        condition: torch.Tensor = None,
+        with_grad: bool = False,
+        solver_config: EasyDict = None,
+        guidance_scale: float = 1.0,
+    ):
+        """
+        Overview:
+            Sample from the functional diffusion model.
+        Arguments:
+            - n_dims (list): list of dimensions of inputs; e.g. for a 64x64 input grid, dims=[64, 64]
+            - n_channels (int): number of independent channels to draw samples for
+            - t_span (tensor): time span to sample over
+            - batch_size (int, tuple, list): batch size for sampling
+            - x_0 (tensor): initial condition for sampling
+            - condition (tensor): condition for sampling
+            - with_grad (bool): whether to compute gradients
+            - solver_config (EasyDict): configuration for the solver
+        Returns:
+            - samples (tensor): samples from the functional diffusion model; tensor (T, B, N, D)
+        """
+        return self.sample_process_with_energy_guidance(
+            n_dims=n_dims,
+            n_channels=n_channels,
+            t_span=t_span,
+            batch_size=batch_size,
+            x_0=x_0,
+            condition=condition,
+            with_grad=with_grad,
+            solver_config=solver_config,
+            guidance_scale=guidance_scale,
+        )[-1]
+
+    def sample_process_with_energy_guidance(
+        self,
+        n_dims: List[int],
+        n_channels: int,
+        t_span: torch.Tensor = None,
+        batch_size: Union[torch.Size, int, Tuple[int], List[int]] = None,
+        x_0: torch.Tensor = None,
+        condition: torch.Tensor = None,
+        with_grad: bool = False,
+        solver_config: EasyDict = None,
+        guidance_scale: float = 1.0,
+    ):
+        """
+        Overview:
+            Sample from the functional diffusion model.
+        Arguments:
+            - n_dims (list): list of dimensions of inputs; e.g. for a 64x64 input grid, dims=[64, 64]
+            - n_channels (int): number of independent channels to draw samples for
+            - t_span (tensor): time span to sample over
+            - batch_size (int, tuple, list): batch size for sampling
+            - x_0 (tensor): initial condition for sampling
+            - condition (tensor): condition for sampling
+            - with_grad (bool): whether to compute gradients
+            - solver_config (EasyDict): configuration for the solver
+        Returns:
+            - samples (tensor): samples from the functional diffusion model; tensor (T, B, N, D)
+        """
+        if t_span is not None:
+            t_span = t_span.to(self.device)
+
+        if batch_size is None:
+            extra_batch_size = torch.tensor((1,), device=self.device)
+        elif isinstance(batch_size, int):
+            extra_batch_size = torch.tensor((batch_size,), device=self.device)
+        else:
+            if (
+                isinstance(batch_size, torch.Size)
+                or isinstance(batch_size, Tuple)
+                or isinstance(batch_size, List)
+            ):
+                extra_batch_size = torch.tensor(batch_size, device=self.device)
+            else:
+                assert False, "Invalid batch size"
+
+        if x_0 is not None and condition is not None:
+            assert (
+                x_0.shape[0] == condition.shape[0]
+            ), "The batch size of x_0 and condition must be the same"
+            data_batch_size = x_0.shape[0]
+        elif x_0 is not None:
+            data_batch_size = x_0.shape[0]
+        elif condition is not None:
+            data_batch_size = condition.shape[0]
+        else:
+            data_batch_size = 1
+
+        if solver_config is not None:
+            solver = get_solver(solver_config.type)(**solver_config.args)
+        else:
+            assert hasattr(
+                self, "solver"
+            ), "solver must be specified in config or solver_config"
+            solver = self.solver
+
+        if x_0 is None:
+            x = self.gaussian_process.sample_from_prior(
+                dims=n_dims,
+                n_samples=torch.prod(extra_batch_size) * data_batch_size,
+                n_channels=n_channels,
+            )
+        else:
+            x = x_0
+            # x.shape = (B*N, D)
+
+        if isinstance(solver, ODESolver):
+            # TODO: make it compatible with TensorDict
+            def drift(t, x):
+                return self.diffusion_process.reverse_ode_with_energy_guidance(
+                    function=self.model,
+                    function_type=self.model_type,
+                    energy_guidance_function=lambda t, x: self.energy_guidance.calculate_energy_guidance(
+                        t, x, condition=condition, guidance_scale=guidance_scale
+                    ),
+                    # condition=condition,
+                ).drift(t, x)
+
+            if solver.library == "torchdiffeq_adjoint":
+                if with_grad:
+                    data = solver.integrate(
+                        drift=drift,
+                        x0=x,
+                        t_span=t_span,
+                        adjoint_params=find_parameters(self.model),
+                    )
+                else:
+                    with torch.no_grad():
+                        data = solver.integrate(
+                            drift=drift,
+                            x0=x,
+                            t_span=t_span,
+                            adjoint_params=find_parameters(self.model),
+                        )
+            else:
+                if with_grad:
+                    data = solver.integrate(
+                        drift=drift,
+                        x0=x,
+                        t_span=t_span,
+                    )
+                else:
+                    with torch.no_grad():
+                        data = solver.integrate(
+                            drift=drift,
+                            x0=x,
+                            t_span=t_span,
+                        )
+        else:
+            raise NotImplementedError("Not implemented")
+
+        if len(extra_batch_size.shape) == 0:
+            data = data.reshape(
+                -1, extra_batch_size, data_batch_size, n_channels, *n_dims
+            )
+        else:
+            data = data.reshape(
+                -1, *extra_batch_size, data_batch_size, n_channels, *n_dims
+            )
+        # data.shape = (T, B, N, D)
+
+        if batch_size is None:
+            if x_0 is None and condition is None:
+                data = data.squeeze(1).squeeze(1)
+                # data.shape = (T, D)
+            else:
+                data = data.squeeze(1)
+                # data.shape = (T, N, D)
+        else:
+            if x_0 is None and condition is None:
+                data = data.squeeze(1 + len(extra_batch_size))
+                # data.shape = (T, B, D)
+            else:
+                # data.shape = (T, B, N, D)
+                pass
+
+        return data

@@ -226,7 +226,7 @@ class FunctionalFlow(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)
@@ -619,7 +619,7 @@ class FunctionalFlow(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)
@@ -1073,7 +1073,7 @@ class FunctionalFlowForRegression(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)
@@ -1466,7 +1466,7 @@ class FunctionalFlowForRegression(nn.Module):
                 # data.shape = (T, N, D)
         else:
             if x_0 is None and condition is None:
-                data = data.squeeze(1 + len(extra_batch_size.shape))
+                data = data.squeeze(1 + len(extra_batch_size))
                 # data.shape = (T, B, D)
             else:
                 # data.shape = (T, B, N, D)

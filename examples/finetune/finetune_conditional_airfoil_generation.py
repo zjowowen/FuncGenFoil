@@ -493,7 +493,6 @@ def main(args):
     mp_list = []
 
     t_span = torch.linspace(0.0, 1.0, 50).to(device)
-    x_ = torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2).to(device).repeat(batch_size, 1)
 
     for iteration in track(
         range(1, config.parameter.iterations + 1),
@@ -506,6 +505,7 @@ def main(args):
 
                 data = train_replay_buffer.sample()
                 data = data.to(device)
+                x_ = torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2).to(device).repeat(data.shape[0], 1)
                 data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
                     train_dataset.max.to(device) - train_dataset.min.to(device)
                 ) * 2 - 1

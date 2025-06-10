@@ -97,7 +97,7 @@ def torch_factorial(x):
     return torch.exp(torch.lgamma(x + 1))
 
 
-def calculate_airfoil_metric_n15_batch(x, y):
+def calculate_airfoil_metric_n15_batch(x, y, stacked:bool = False):
     """
     Batch version of calculate_airfoil_metric_n15.
 
@@ -212,23 +212,45 @@ def calculate_airfoil_metric_n15_batch(x, y):
 
     rf = radius[:, 128]
 
-    return (
-        rf,
-        t4u,
-        t4l,
-        xumax,
-        yumax,
-        xlmax,
-        ylmax,
-        t25u,
-        t25l,
-        angle,
-        te1,
-        xr,
-        yr,
-        t60u,
-        t60l,
-    )
+    if stacked:
+        return torch.stack(
+            [
+                rf,
+                t4u,
+                t4l,
+                xumax,
+                yumax,
+                xlmax,
+                ylmax,
+                t25u,
+                t25l,
+                angle,
+                te1,
+                xr,
+                yr,
+                t60u,
+                t60l,
+            ],
+            dim=1,
+        )
+    else:
+        return (
+            rf,
+            t4u,
+            t4l,
+            xumax,
+            yumax,
+            xlmax,
+            ylmax,
+            t25u,
+            t25l,
+            angle,
+            te1,
+            xr,
+            yr,
+            t60u,
+            t60l,
+        )
 
 
 if __name__ == "__main__":

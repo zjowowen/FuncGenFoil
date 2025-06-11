@@ -576,20 +576,21 @@ def main(args):
                     )
                 ]
 
-                # render_video_3x3(data_list, "output", iteration)
-                p = mp.Process(
-                    target=render_video_3x3_polish,
-                    args=(
-                        data_list,
-                        "output",
-                        iteration,
-                        train_dataset.max.cpu().numpy(),
-                        train_dataset.min.cpu().numpy(),
-                    ),
-                    daemon=True,
-                )
-                p.start()
-                mp_list.append(p)
+                if accelerator.is_local_main_process:
+                    # render_video_3x3(data_list, "output", iteration)
+                    p = mp.Process(
+                        target=render_video_3x3_polish,
+                        args=(
+                            data_list,
+                            "output",
+                            iteration,
+                            train_dataset.max.cpu().numpy(),
+                            train_dataset.min.cpu().numpy(),
+                        ),
+                        daemon=True,
+                    )
+                    p.start()
+                    mp_list.append(p)
 
         if iteration % config.parameter.checkpoint_rate == 0:
 

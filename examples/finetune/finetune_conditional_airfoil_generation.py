@@ -44,6 +44,7 @@ from airfoil_generation.dataset.airfoil_metric_batchwise import (
     calculate_airfoil_metric_n15_batch,
 )
 
+
 def render_video_3x3_polish(
     data_list,
     video_save_path,
@@ -265,7 +266,8 @@ def main(args):
                 train_samples=20000 if args.dataset == "supercritical" else 200000,
                 batch_size=args.batch_size,
                 learning_rate=5e-5 * accelerator.num_processes,
-                gradient_accumulation_steps=args.batch_size_accumulation // args.batch_size,
+                gradient_accumulation_steps=args.batch_size_accumulation
+                // args.batch_size,
                 iterations=(
                     args.iterations
                     if args.iterations is not None
@@ -275,7 +277,7 @@ def main(args):
                         else (
                             (
                                 args.epoch * 200000 // args.batch_size
-                                if args.dataset_names != ['interpolated_uiuc']
+                                if args.dataset_names != ["interpolated_uiuc"]
                                 else args.epoch * 2048 // args.batch_size
                             )
                             if args.epoch is not None and args.dataset == "af200k"
@@ -284,7 +286,7 @@ def main(args):
                                 if args.dataset == "supercritical"
                                 else (
                                     200000 // args.batch_size * 2000
-                                    if args.dataset_names != ['interpolated_uiuc']
+                                    if args.dataset_names != ["interpolated_uiuc"]
                                     else 2048 // args.batch_size * 2000
                                 )
                             )
@@ -298,7 +300,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // args.batch_size * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // args.batch_size * 500
                     )
                 ),
@@ -307,7 +309,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // args.batch_size * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // args.batch_size * 500
                     )
                 ),
@@ -463,7 +465,7 @@ def main(args):
     #     "std": train_dataset_std,
     # }
     # torch.save(stats, f"output/{project_name}/mean_std.pt")
-    # # load train_dataset_min and train_dataset_max using safetensors
+    # load train_dataset_min and train_dataset_max using safetensors
     # stats = torch.load('mean_std.pt')
     # train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
 
@@ -505,7 +507,11 @@ def main(args):
 
                 data = train_replay_buffer.sample()
                 data = data.to(device)
-                x_ = torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2).to(device).repeat(data.shape[0], 1)
+                x_ = (
+                    torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2)
+                    .to(device)
+                    .repeat(data.shape[0], 1)
+                )
                 data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
                     train_dataset.max.to(device) - train_dataset.min.to(device)
                 ) * 2 - 1
@@ -519,7 +525,7 @@ def main(args):
 
                 gt = gt.reshape(-1, 1, 257)  # (b,1,257)
 
-                noised_y = y + torch.randn_like(y) * 1/8
+                noised_y = y + torch.randn_like(y) * 1 / 8
 
                 (
                     x1,
@@ -537,14 +543,16 @@ def main(args):
                     train_dataset.max[1] - train_dataset.min[1]
                 ) + train_dataset.min[1]
 
-                y_calculated = calculate_airfoil_metric_n15_batch(x=x_, y=x1_denormed[:,0], stacked=True)
+                y_calculated = calculate_airfoil_metric_n15_batch(
+                    x=x_, y=x1_denormed[:, 0], stacked=True
+                )
 
                 y_calculated_normed = (y_calculated - train_dataset_mean[None, :]) / (
                     train_dataset_std[None, :] + 1e-8
                 )
 
                 loss_1 = torch.mean(
-                    0.5 * torch.sum((y_calculated_normed - noised_y)** 2)/ 0.0001
+                    0.5 * torch.sum((y_calculated_normed - noised_y) ** 2) / 0.0001
                 )
                 loss_2 = -logp_x1.mean()
                 loss = loss_1 + loss_2
@@ -555,13 +563,16 @@ def main(args):
                     optimizer.step()
                     optimizer.zero_grad()
                     scheduler.step()
-                
 
         loss = accelerator.gather(loss)
+        loss_1 = accelerator.gather(loss_1)
+        loss_2 = accelerator.gather(loss_2)
         if iteration % config.parameter.log_rate == 0:
             if accelerator.is_local_main_process:
                 to_log = {
                     "loss/mean": loss.mean().item(),
+                    "loss_1/mean": loss_1.mean().item(),
+                    "loss_2/mean": loss_2.mean().item(),
                     "iteration": iteration,
                     "epoch": iteration // iteration_per_epoch,
                     "lr": scheduler.get_last_lr()[0],
@@ -569,11 +580,77 @@ def main(args):
 
                 if len(loss.shape) == 0:
                     to_log["loss/std"] = 0
+                    to_log["loss_1/std"] = 0
+                    to_log["loss_2/std"] = 0
                     to_log["loss/0"] = loss.item()
+                    to_log["loss_1/0"] = loss_1.item()
+                    to_log["loss_2/0"] = loss_2.item()
                 elif loss.shape[0] > 1:
                     to_log["loss/std"] = loss.std().item()
+                    to_log["loss_1/std"] = loss_1.std().item()
+                    to_log["loss_2/std"] = loss_2.std().item()
                     for i in range(loss.shape[0]):
                         to_log[f"loss/{i}"] = loss[i].item()
+                        to_log[f"loss_1/{i}"] = loss_1[i].item()
+                        to_log[f"loss_2/{i}"] = loss_2[i].item()
+
+                if True:
+                    # test a specific design generation error
+                    specific_design_params = (
+                        torch.tensor(
+                            [
+                                0.012627,
+                                0.031974,
+                                -0.024484,
+                                0.4013,
+                                0.065599,
+                                0.3096,
+                                -0.046061,
+                                0.061031,
+                                -0.045374,
+                                -30.572049,
+                                0.001439,
+                                0.8863,
+                                0.01305,
+                                0.060057,
+                                -0.029317,
+                            ]
+                        )
+                        .to(device)
+                        .float()
+                        .unsqueeze(0)
+                    )
+                    specific_design_params = (
+                        specific_design_params - train_dataset_mean[None, :]
+                    ) / (train_dataset_std[None, :] + 1e-8)
+                    sample_trajectory = flow_model.sample_process(
+                        n_dims=config.flow_model.gaussian_process.args.dims,
+                        n_channels=1,
+                        t_span=torch.linspace(0.0, 1.0, 1000),
+                        batch_size=1,
+                        condition=specific_design_params.repeat(10, 1),
+                    )
+                    sample_trajectory_denormed = (sample_trajectory + 1) / 2.0 * (
+                        train_dataset.max[1] - train_dataset.min[1]
+                    ) + train_dataset.min[1]
+                    y_calculated = calculate_airfoil_metric_n15_batch(
+                        x=torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2)
+                        .to(device)
+                        .repeat(10, 1),
+                        y=sample_trajectory_denormed[:, 0],
+                        stacked=True,
+                    )
+                    label_error = (
+                        (y_calculated - specific_design_params.repeat(10, 1))
+                        .abs()
+                        .mean(dim=0)
+                    )
+                    to_log["specific_label_error/mean"] = label_error.mean().item()
+                    for index in range(label_error.shape[0]):
+                        to_log[f"specific_label_error_{index}/mean"] = (
+                            label_error[index].mean().item()
+                        )
+
                 accelerator.log(
                     to_log,
                     step=iteration,

@@ -627,17 +627,16 @@ def main(args):
                         n_dims=config.flow_model.gaussian_process.args.dims,
                         n_channels=1,
                         t_span=torch.linspace(0.0, 1.0, 1000),
-                        batch_size=1,
-                        condition=specific_design_params.repeat(10, 1),
+                        condition=specific_design_params,
                     )
-                    sample_trajectory_denormed = (sample_trajectory + 1) / 2.0 * (
+                    sample_denormed = (sample_trajectory[-1] + 1) / 2.0 * (
                         train_dataset.max[1] - train_dataset.min[1]
                     ) + train_dataset.min[1]
                     y_calculated = calculate_airfoil_metric_n15_batch(
                         x=torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2)
                         .to(device)
-                        .repeat(10, 1),
-                        y=sample_trajectory_denormed[:, 0],
+                        .repeat(1, 1),
+                        y=sample_denormed[:, 0],
                         stacked=True,
                     )
                     label_error = (

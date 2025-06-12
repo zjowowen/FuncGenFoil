@@ -620,14 +620,14 @@ def main(args):
                         .float()
                         .unsqueeze(0)
                     )
-                    specific_design_params = (
+                    specific_design_params_normed = (
                         specific_design_params - train_dataset_mean[None, :]
                     ) / (train_dataset_std[None, :] + 1e-8)
                     sample_trajectory = flow_model.sample_process(
                         n_dims=config.flow_model.gaussian_process.args.dims,
                         n_channels=1,
                         t_span=torch.linspace(0.0, 1.0, 1000),
-                        condition=specific_design_params,
+                        condition=specific_design_params_normed,
                     )
                     sample_denormed = (sample_trajectory[-1] + 1) / 2.0 * (
                         train_dataset.max[1] - train_dataset.min[1]

@@ -293,7 +293,7 @@ def main(args):
                         )
                     )
                 ),
-                warmup_steps=2000,
+                warmup_steps=args.warmup_steps,
                 log_rate=100,
                 eval_rate=(
                     20000 // args.batch_size * 500 // 1000
@@ -782,6 +782,13 @@ if __name__ == "__main__":
         default=None,
         type=int,
         help="Number of training epochs.",
+    )
+    argparser.add_argument(
+        "--warmup_steps",
+        "-ws",
+        default=2000,
+        type=int,
+        help="Number of warmup steps for the learning rate scheduler.",
     )
     argparser.add_argument(
         "--length_scale",

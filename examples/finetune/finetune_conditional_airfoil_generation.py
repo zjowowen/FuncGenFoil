@@ -525,7 +525,7 @@ def main(args):
 
                 gt = gt.reshape(-1, 1, 257)  # (b,1,257)
 
-                noised_y = y + torch.randn_like(y) * 1 / 8
+                noised_y = y + torch.randn_like(y) * args.perturbation_level
 
                 (
                     x1,
@@ -824,6 +824,13 @@ if __name__ == "__main__":
         default=64,
         type=int,
         help="Number of modes in Fourier Neural Operator",
+    )
+
+    argparser.add_argument(
+        "--perturbation_level",
+        default=0.125,
+        type=float,
+        help="Perturbation level for the input parameters.",
     )
 
     args = argparser.parse_args()

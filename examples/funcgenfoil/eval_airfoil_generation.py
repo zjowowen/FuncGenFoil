@@ -33,9 +33,7 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
 from scipy.spatial.distance import pdist, squareform
 
 
-
 def render_video_3x3_polish(
-    resolution,
     data_list,
     video_save_path,
     iteration,
@@ -50,7 +48,7 @@ def render_video_3x3_polish(
     # Use a modern matplotlib style
     plt.style.use("seaborn-v0_8-dark-palette")
 
-    xs = (np.cos(np.linspace(0, 2 * np.pi, resolution)) + 1) / 2
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
     frames = len(data_list)
 
     fig, axs = plt.subplots(3, 3, figsize=(10, 10))
@@ -116,136 +114,6 @@ def render_video_3x3_polish(
     plt.close(fig)
     plt.clf()
     print(f"Saved video to {save_path}")
-
-
-
-def render_last_fig_3x3_super_resolution(
-    data_list,
-    resolution,
-    video_save_path,
-    iteration,
-    train_dataset_max,
-    train_dataset_min,
-    scatter_x=None,
-    scatter_y=None,
-    scatter_y_noise=None,
-    fps=100,
-    dpi=100,
-):
-    if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
-
-    xs = (np.cos(np.linspace(0, 2 * np.pi, resolution)) + 1) / 2
-
-    if scatter_x is not None:
-        scatter_x_cos = (np.cos(scatter_x * 2 * np.pi) + 1) / 2
-
-    # Number of frames in the animation is just len(data_list) = 1000
-    frames = len(data_list)
-
-    # Create figure with 3x3 subplots
-    fig, axs = plt.subplots(3, 3, figsize=(8, 8))
-
-    data = data_list[-1].squeeze()
-    for j, ax in enumerate(axs.flat):
-        ax.clear()
-        ax.set_xlim([0, 1])
-        ax.set_ylim([-0.1, 0.1])
-        ax.plot(
-            xs,
-            (
-                (data[j, :] + 1) / 2 * (train_dataset_max[1] - train_dataset_min[1])
-                + train_dataset_min[1]
-            ),
-            lw=0.1,
-        )
-        ax.scatter(
-            xs,
-            (
-                (data[j, :] + 1) / 2 * (train_dataset_max[1] - train_dataset_min[1])
-                + train_dataset_min[1]
-            ),
-            s=0.01,
-            c="b",
-        )
-        if scatter_x is not None:
-            ax.scatter(scatter_x_cos, scatter_y, s=0.02, c="r")
-            if scatter_y_noise is not None:
-                ax.scatter(scatter_x_cos, scatter_y_noise, s=0.02, c="g")
-
-    save_path = os.path.join(
-        video_save_path, f"iteration_last_fig_{iteration}_{resolution}.png"
-    )
-    plt.savefig(save_path, dpi=300)
-
-    # Clean up
-    plt.close(fig)
-    plt.clf()
-    print(f"Saved image to {save_path}")
-
-
-def render_last_fig_3x3_super_resolution_all(
-    data_list,
-    resolution,
-    video_save_path,
-    iteration,
-    train_dataset_max,
-    train_dataset_min,
-    scatter_x=None,
-    scatter_y=None,
-    scatter_y_noise=None,
-    fps=100,
-    dpi=100,
-):
-    if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path)
-
-    # Number of frames in the animation is just len(data_list) = 1000
-    frames = len(data_list)
-
-    # Create figure with 3x3 subplots
-    fig, axs = plt.subplots(3, 3, figsize=(8, 8))
-
-    for j, ax in enumerate(axs.flat):
-        for data in data_list:
-            data = data[-1].squeeze()
-            xs = (np.cos(np.linspace(0, 2 * np.pi, data.shape[-1])) + 1) / 2
-            if scatter_x is not None:
-                scatter_x_cos = (np.cos(scatter_x * 2 * np.pi) + 1) / 2
-
-            ax.set_xlim([0, 1])
-            ax.set_ylim([-0.1, 0.1])
-            ax.plot(
-                xs,
-                (
-                    (data[j, :] + 1) / 2 * (train_dataset_max[1] - train_dataset_min[1])
-                    + train_dataset_min[1]
-                ),
-                lw=0.1,
-            )
-            ax.scatter(
-                xs,
-                (
-                    (data[j, :] + 1) / 2 * (train_dataset_max[1] - train_dataset_min[1])
-                    + train_dataset_min[1]
-                ),
-                s=0.01,
-                c="b",
-            )
-            if scatter_x is not None:
-                ax.scatter(scatter_x_cos, scatter_y, s=0.02, c="r")
-                if scatter_y_noise is not None:
-                    ax.scatter(scatter_x_cos, scatter_y_noise, s=0.02, c="g")
-
-    save_path = os.path.join(
-        video_save_path, f"iteration_last_fig_{iteration}_{resolution}_all.png"
-    )
-    plt.savefig(save_path, dpi=300)
-
-    # Clean up
-    plt.close(fig)
-    plt.clf()
-    print(f"Saved image to {save_path}")
 
 
 def calculate_smoothness(airfoil):
@@ -316,7 +184,6 @@ def main(args):
     print(f"Process rank: {process_rank}")
 
     project_name = args.project_name
-
     config = EasyDict(
         dict(
             device=device,
@@ -448,8 +315,6 @@ def main(args):
 
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
-
-
     train_dataset = (
         Dataset(
             split="train",
@@ -544,147 +409,7 @@ def main(args):
     accelerator.print("✨ Start evaluation ...")
 
     flow_model.eval()
-
-    # test model
-    if False:
-        flow_model.eval()
-        flow_model = flow_model.to(device)
-        with torch.no_grad():
-            resolution_4x = (config.flow_model.gaussian_process.dims[0] - 1) * 4 + 1
-            resolution_2x = (config.flow_model.gaussian_process.dims[0] - 1) * 2 + 1
-            resolution = config.flow_model.gaussian_process.dims[0]
-            resolution_05x = (config.flow_model.gaussian_process.dims[0] - 1) // 2 + 1
-            resolution_025x = (config.flow_model.gaussian_process.dims[0] - 1) // 4 + 1
-            prior_4x = flow_model.gaussian_process.sample(
-                dims=[resolution_4x], n_samples=9, n_channels=1
-            )
-            prior_2x = prior_4x[:, :, ::2]
-            prior_x = prior_2x[:, :, ::2]
-            prior_05x = prior_x[:, :, ::2]
-            prior_025x = prior_05x[:, :, ::2]
-            sample_trajectory_4x = flow_model.sample_process(
-                n_dims=[resolution_4x],
-                n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 1000),
-                x_0=prior_4x,
-            )
-            sample_trajectory_2x = flow_model.sample_process(
-                n_dims=[resolution_2x],
-                n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 1000),
-                x_0=prior_2x,
-            )
-            sample_trajectory_x = flow_model.sample_process(
-                n_dims=[resolution],
-                n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 1000),
-                x_0=prior_x,
-            )
-            sample_trajectory_05x = flow_model.sample_process(
-                n_dims=[resolution_05x],
-                n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 1000),
-                x_0=prior_05x,
-            )
-            sample_trajectory_025x = flow_model.sample_process(
-                n_dims=[resolution_025x],
-                n_channels=1,
-                t_span=torch.linspace(0.0, 1.0, 1000),
-                x_0=prior_025x,
-            )
-
-            # sample_trajectory is of shape (T, B, C, D)
-            data_list_4x = [
-                x.squeeze(0).cpu().numpy()
-                for x in torch.split(
-                    sample_trajectory_4x, split_size_or_sections=1, dim=0
-                )
-            ]
-
-            data_list_2x = [
-                x.squeeze(0).cpu().numpy()
-                for x in torch.split(
-                    sample_trajectory_2x, split_size_or_sections=1, dim=0
-                )
-            ]
-
-            data_list_x = [
-                x.squeeze(0).cpu().numpy()
-                for x in torch.split(
-                    sample_trajectory_x, split_size_or_sections=1, dim=0
-                )
-            ]
-
-            data_list_05x = [
-                x.squeeze(0).cpu().numpy()
-                for x in torch.split(
-                    sample_trajectory_05x, split_size_or_sections=1, dim=0
-                )
-            ]
-
-            data_list_025x = [
-                x.squeeze(0).cpu().numpy()
-                for x in torch.split(
-                    sample_trajectory_025x, split_size_or_sections=1, dim=0
-                )
-            ]
-
-            render_last_fig_3x3_super_resolution(
-                data_list_4x,
-                resolution_4x,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-            render_last_fig_3x3_super_resolution(
-                data_list_2x,
-                resolution_2x,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-            render_last_fig_3x3_super_resolution(
-                data_list_x,
-                resolution,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-            render_last_fig_3x3_super_resolution(
-                data_list_05x,
-                resolution_05x,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-            render_last_fig_3x3_super_resolution(
-                data_list_025x,
-                resolution_025x,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-            render_last_fig_3x3_super_resolution_all(
-                [
-                    data_list_4x,
-                    data_list_2x,
-                    data_list_x,
-                    data_list_05x,
-                    data_list_025x,
-                ],
-                resolution_4x,
-                f"output/{project_name}/",
-                -1,
-                train_dataset.max.cpu().numpy(),
-                train_dataset.min.cpu().numpy(),
-            )
-
-    resolution = config.flow_model.gaussian_process.args.dims[0] if args.resolution is None else args.resolution
+    resolution = config.flow_model.gaussian_process.args.dims[0]
     rs = [resolution]
     l = len(rs)
     label_error = np.zeros((len(test_replay_buffer), l, args.num_constraints))
@@ -739,12 +464,12 @@ def main(args):
                     )
                 ]
 
-                # render_video_3x3_polish(r, figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+                # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
+                # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
 
                 p = mp.Process(
                     target=render_video_3x3_polish,
                     args=(
-                        r,
                         figure_list,
                         args.project_name,
                         i,
@@ -825,7 +550,9 @@ def main(args):
 
             label_error_i = np.mean(arr)
             mean_label_error_list.append(label_error_i)
-            label_error_filtered_i = cal_mean(arr, remove_max_percent=args.remove_max_percent)
+            label_error_filtered_i = cal_mean(
+                arr, remove_max_percent=args.remove_max_percent
+            )
             mean_label_error_filtered_list.append(label_error_filtered_i)
 
             print(f"label error {index}: {label_error_i}")
@@ -837,16 +564,18 @@ def main(args):
             max_index = np.argsort(arr)[-9:]
             print(f"label error {index} max: {arr[max_index]}, index: {max_index}")
 
-
         # compute arithmetic mean of label error
         arithmetic_mean_error = np.mean(mean_label_error_list)
         print(f"label error (arithmetic mean) : {arithmetic_mean_error}")
         log_msg[f"label error (arithmetic mean) {i}"] = arithmetic_mean_error
 
         arithmetic_mean_error_filtered = np.mean(mean_label_error_filtered_list)
-        print(f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}")
-        log_msg[f"label error (arithmetic mean) {i} Filtered"] = arithmetic_mean_error_filtered
-
+        print(
+            f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}"
+        )
+        log_msg[f"label error (arithmetic mean) {i} Filtered"] = (
+            arithmetic_mean_error_filtered
+        )
 
         # compute geometric mean of label error
         geometric_mean_error = np.abs(np.prod(mean_label_error_list)) ** (
@@ -855,16 +584,18 @@ def main(args):
         print(f"label error (geometric mean) : {geometric_mean_error}")
         log_msg[f"label error (geometric mean) {i}"] = geometric_mean_error
 
-        geometric_mean_error_filtered = np.abs(np.prod(mean_label_error_filtered_list)) ** (
-            1 / label_error.shape[2]
-        )
+        geometric_mean_error_filtered = np.abs(
+            np.prod(mean_label_error_filtered_list)
+        ) ** (1 / label_error.shape[2])
         print(f"label error (geometric mean) Filtered: {geometric_mean_error_filtered}")
-        log_msg[f"label error (geometric mean) {i} Filtered"] = geometric_mean_error_filtered
+        log_msg[f"label error (geometric mean) {i} Filtered"] = (
+            geometric_mean_error_filtered
+        )
 
         print(f"mean smoothness: {np.mean(smoothness[:,i])}")
         print(f"mean diversity: {np.mean(diversity[:,i])}")
 
-        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:,i])
+        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:, i])
         log_msg[f"mean diversity {i}"] = np.mean(diversity[:, i])
 
     if args.wandb:
@@ -909,7 +640,7 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--project_name",
         type=str,
-        default="airfoil-generation-super-resolution",
+        default="airfoil-evaluation",
         help="Project name",
     )
     argparser.add_argument(
@@ -960,7 +691,6 @@ if __name__ == "__main__":
         help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
-
     argparser.add_argument(
         "--t_span",
         default=10,
@@ -998,13 +728,6 @@ if __name__ == "__main__":
         type=str,
         help="ODE solver to use, euler, rk4, midpoint",
     )
-    argparser.add_argument(
-        "--resolution",
-        default=513,
-        type=int,
-        help="resolution of the airfoil",
-    )
 
     args = argparser.parse_args()
     main(args)
-

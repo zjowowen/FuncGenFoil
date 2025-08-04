@@ -30,10 +30,6 @@ from airfoil_generation.model.optimal_transport_functional_flow_model import (
     OptimalTransportFunctionalFlow,
 )
 
-from airfoil_generation.dataset.airfoil_metric_batchwise import (
-    calculate_airfoil_metric_n15_batch,
-)
-
 from scipy.spatial.distance import pdist, squareform
 
 
@@ -61,6 +57,89 @@ def render_video_3x3_polish(
     # Choose a beautiful colormap
     color_map = cm.get_cmap("magma", 9)
     scatter_map = cm.get_cmap("cool", 9)
+
+    def update(frame_idx):
+        data = data_list[frame_idx].squeeze()
+        for j, ax in enumerate(axs.flat):
+            ax.clear()
+            ax.set_xlim([0, 1])
+            ax.set_ylim([-0.1, 0.1])
+            ax.set_facecolor("#1b1d2b")
+
+            # Remove axis ticks and spines for minimalism
+            ax.set_xticks([])
+            ax.set_yticks([])
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+
+            # Calculate y values
+            y = (data[j, :] + 1) / 2 * (
+                train_dataset_max[1] - train_dataset_min[1]
+            ) + train_dataset_min[1]
+
+            # Plot with smooth, thick, semi-transparent line
+            ax.plot(
+                xs,
+                y,
+                lw=2.5,
+                color=color_map(j),
+                alpha=0.85,
+                solid_capstyle="round",
+            )
+            # Scatter with lower alpha, slightly larger size for glow effect
+            ax.scatter(
+                xs,
+                y,
+                s=12,
+                c=[scatter_map(j)],
+                edgecolors="none",
+                alpha=0.28,
+                zorder=3,
+            )
+
+            # Optional: Add a soft grid for depth
+            ax.grid(
+                visible=True, color="#2a2e42", linestyle="--", linewidth=0.5, alpha=0.3
+            )
+
+        return []
+
+    ani = animation.FuncAnimation(
+        fig, update, frames=range(frames), interval=1000 / fps, blit=False
+    )
+
+    save_path = os.path.join(video_save_path, f"iteration_{iteration}.mp4")
+    ani.save(save_path, fps=fps, dpi=dpi, writer="ffmpeg")
+
+    plt.close(fig)
+    plt.clf()
+    print(f"Saved video to {save_path}")
+
+
+def render_video_6x6_polish(
+    data_list,
+    video_save_path,
+    iteration,
+    train_dataset_max,
+    train_dataset_min,
+    fps=30,  # Lower FPS for artistic, slower animation
+    dpi=150,  # Higher DPI for crispness
+):
+    if not os.path.exists(video_save_path):
+        os.makedirs(video_save_path, exist_ok=True)
+
+    # Use a modern matplotlib style
+    plt.style.use("seaborn-v0_8-dark-palette")
+
+    xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
+    frames = len(data_list)
+
+    fig, axs = plt.subplots(6, 6, figsize=(20, 20))
+    fig.patch.set_facecolor("#11131b")  # deep dark background
+
+    # Choose a beautiful colormap
+    color_map = cm.get_cmap("magma", 36)
+    scatter_map = cm.get_cmap("cool", 36)
 
     def update(frame_idx):
         data = data_list[frame_idx].squeeze()
@@ -238,7 +317,11 @@ def main(args):
                                 x_dim=1,
                                 t_scaling=1,
                                 n_layers=6,
-                                n_conditions=args.num_constraints,
+                                n_conditions=(
+                                    args.num_constraints
+                                    if not args.unconditional
+                                    else 0
+                                ),
                             ),
                         ),
                     ),
@@ -404,7 +487,7 @@ def main(args):
 
     test_replay_buffer = TensorDictReplayBuffer(
         storage=test_dataset.storage,
-        batch_size=1,
+        batch_size=36,
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=False),
         prefetch=10,
     )
@@ -445,7 +528,7 @@ def main(args):
         priors = []
         for r in rs:
             priors.append(
-                flow_model.gaussian_process.sample(dims=[r], n_samples=20, n_channels=1)
+                flow_model.gaussian_process.sample(dims=[r], n_samples=36, n_channels=1)
             )
 
         sample_trajectorys = []
@@ -453,10 +536,9 @@ def main(args):
             sample_trajectory = flow_model.sample_process(
                 n_dims=[r],
                 n_channels=1,
-                t_span=torch.linspace(0.0, args.t_end, args.t_span),
-                batch_size=1,
-                x_0=prior,
-                condition=y.repeat(20, 1),
+                t_span=torch.linspace(0.0, 1.0, 100),
+                x_0=priors[0] if args.unconditional else None,
+                condition=y if not args.unconditional else None,
                 with_grad=False,
             )
 
@@ -469,137 +551,13 @@ def main(args):
                 ]
 
                 # render_video_3x3(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
-                # render_video_3x3_polish(figure_list, args.project_name, i, train_dataset.max.cpu().numpy(), train_dataset.min.cpu().numpy())
-
-                p = mp.Process(
-                    target=render_video_3x3_polish,
-                    args=(
-                        figure_list,
-                        args.project_name,
-                        i,
-                        train_dataset.max.cpu().numpy(),
-                        train_dataset.min.cpu().numpy(),
-                    ),
-                    daemon=True,
+                render_video_6x6_polish(
+                    figure_list,
+                    args.project_name,
+                    i,
+                    train_dataset.max.cpu().numpy(),
+                    train_dataset.min.cpu().numpy(),
                 )
-                p.start()
-                mp_list.append(p)
-
-            sample_trajectorys.append(sample_trajectory)
-
-        data_list_list = []
-        for sample_trajectory in sample_trajectorys:
-            data_list_list.append(
-                [
-                    x.squeeze(0).detach()
-                    for x in torch.split(
-                        sample_trajectory, split_size_or_sections=1, dim=0
-                    )
-                ]
-            )
-
-        label_error_ = np.zeros((l, args.num_constraints))
-        smoothness_ = np.zeros((l,))
-
-        for j, data_list in enumerate(data_list_list):
-            data_list_ = []
-            airfoils = data_list[-1][0, :, 0, :]
-
-            for airfoil in airfoils:
-                airfoil = (airfoil + 1) / 2 * (
-                    train_dataset.max[1]
-                    - train_dataset.min[1]
-                ) + train_dataset.min[1]
-                data_list_.append(airfoil.cpu().numpy())
-                xs = (np.cos(np.linspace(0, 2 * np.pi, airfoil.shape[-1])) + 1) / 2
-                if args.num_constraints == 11:
-                    raise ValueError(
-                        "num_constraints 11 is not supported in evaluation, please use 15 instead."
-                    )
-                elif args.num_constraints == 15:
-                    parsec_params = calculate_airfoil_metric_n15_batch(
-                        x=torch.tensor((np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2).to(device).unsqueeze(0), 
-                        y=airfoil.unsqueeze(0).to(device), 
-                        stacked=True
-                    ).squeeze(0)
-                else:
-                    raise ValueError(
-                        f"num_constraints {args.num_constraints} not supported"
-                    )
-                label_error_[j] += np.abs(
-                    parsec_params.cpu().numpy() - data["params"].reshape(-1).cpu().numpy()
-                )
-                smoothness_[j] += calculate_smoothness(np.stack([xs, airfoil.cpu().numpy()], axis=-1))
-
-            label_error_[j] /= len(airfoils)
-            smoothness_[j] /= len(airfoils)
-            label_error[i, j] = label_error_[j]
-            smoothness[i, j] = smoothness_[j]
-            data_list_ = np.array(data_list_)
-            diversity[i, j] = cal_diversity_score(data_list_)
-            # print(np.mean(label_error[i,j]), label_error[i,j], smoothness[i,j], diversity[i,j])
-
-    np.save(f"output/{project_name}/label_error.npy", label_error)
-    np.save(f"output/{project_name}/smoothness.npy", smoothness)
-    np.save(f"output/{project_name}/diversity.npy", diversity)
-
-    log_msg = {}
-
-    for i, r in enumerate(rs):
-        print("Resolution: ", r)
-        index = 0
-
-        mean_label_error_list = []
-        mean_label_error_filtered_list = []
-        for arr in label_error[:, i, :].T:
-            index += 1
-
-            label_error_i = np.mean(arr)
-            mean_label_error_list.append(label_error_i)
-            label_error_filtered_i = cal_mean(arr, remove_max_percent=args.remove_max_percent)
-            mean_label_error_filtered_list.append(label_error_filtered_i)
-
-            print(f"label error {index}: {label_error_i}")
-            log_msg[f"label error {i}-{index}"] = label_error_i
-            print(f"label error {index} Filtered: {label_error_filtered_i}")
-            log_msg[f"label error {i}-{index} Filtered"] = label_error_filtered_i
-
-            # print the maxium error of each label
-            max_index = np.argsort(arr)[-9:]
-            print(f"label error {index} max: {arr[max_index]}, index: {max_index}")
-
-
-        # compute arithmetic mean of label error
-        arithmetic_mean_error = np.mean(mean_label_error_list)
-        print(f"label error (arithmetic mean) : {arithmetic_mean_error}")
-        log_msg[f"label error (arithmetic mean) {i}"] = arithmetic_mean_error
-
-        arithmetic_mean_error_filtered = np.mean(mean_label_error_filtered_list)
-        print(f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}")
-        log_msg[f"label error (arithmetic mean) {i} Filtered"] = arithmetic_mean_error_filtered
-
-
-        # compute geometric mean of label error
-        geometric_mean_error = np.abs(np.prod(mean_label_error_list)) ** (
-            1 / label_error.shape[2]
-        )
-        print(f"label error (geometric mean) : {geometric_mean_error}")
-        log_msg[f"label error (geometric mean) {i}"] = geometric_mean_error
-
-        geometric_mean_error_filtered = np.abs(np.prod(mean_label_error_filtered_list)) ** (
-            1 / label_error.shape[2]
-        )
-        print(f"label error (geometric mean) Filtered: {geometric_mean_error_filtered}")
-        log_msg[f"label error (geometric mean) {i} Filtered"] = geometric_mean_error_filtered
-
-        print(f"mean smoothness: {np.mean(smoothness[:,i])}")
-        print(f"mean diversity: {np.mean(diversity[:,i])}")
-
-        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:,i])
-        log_msg[f"mean diversity {i}"] = np.mean(diversity[:, i])
-
-    if args.wandb:
-        accelerator.log(log_msg, step=0)
 
     accelerator.wait_for_everyone()
 
@@ -691,7 +649,6 @@ if __name__ == "__main__":
         help="which gausssian kernel to use, you can use matern, rbf, white curruntly",
     )
 
-
     argparser.add_argument(
         "--t_span",
         default=10,
@@ -728,6 +685,11 @@ if __name__ == "__main__":
         default="euler",
         type=str,
         help="ODE solver to use, euler, rk4, midpoint",
+    )
+    argparser.add_argument(
+        "--unconditional",
+        action="store_true",
+        help="Whether to use unconditional model",
     )
 
     args = argparser.parse_args()

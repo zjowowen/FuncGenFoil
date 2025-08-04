@@ -168,9 +168,13 @@ if __name__ == "__main__":
             unconditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -204,9 +208,13 @@ if __name__ == "__main__":
             flow_model_regression=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -240,9 +248,13 @@ if __name__ == "__main__":
             conditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.03,
+                        nu=2.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",

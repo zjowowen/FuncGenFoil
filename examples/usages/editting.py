@@ -23,6 +23,76 @@ from airfoil_generation.dataset.parsec_direct_n15 import Fit_airfoil_15
 from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
 
+import matplotlib.pyplot as plt
+
+
+def render_fig_matplotlib(
+    xs,
+    ys,
+    xs_controlled=None,
+    ys_controlled=None,
+    ys_controlled_edited=None,
+):
+    """
+    Render the airfoil curve and points using matplotlib.
+
+    Returns:
+        fig (matplotlib.figure.Figure), xs, ys
+    """
+    # Create a square figure (800×800 px @100dpi → 8×8 inches)
+    fig, ax = plt.subplots(figsize=(8, 8), dpi=100)
+
+    # 1) Airfoil curve (black line)
+    ax.plot(xs, ys, color="black", linewidth=1, label="Airfoil Curve")
+
+    # 2) Airfoil points (small black dots)
+    ax.scatter(
+        xs, ys, s=9, color="black", label="Airfoil Points"
+    )  # s is area in points²
+
+    # 3) Controlled points (original, red ×)
+    if xs_controlled is not None and ys_controlled is not None:
+        ax.scatter(
+            xs_controlled,
+            ys_controlled,
+            s=25,
+            color="red",
+            marker="x",
+            label="Airfoil Points (Original)",
+        )
+
+        # 4) Controlled points (edited, green ×)
+        if ys_controlled_edited is not None:
+            ax.scatter(
+                xs_controlled,
+                ys_controlled_edited,
+                s=25,
+                color="green",
+                marker="x",
+                label="Airfoil Points (Edited)",
+            )
+
+    # Set axis limits
+    ax.set_xlim(-0.1, 1.1)
+    ax.set_ylim(-0.11, 0.11)
+
+    # Remove axes, ticks, grid, etc.
+    ax.axis("off")
+
+    # Expand the plot to fill the figure
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    # Optional legend (will only show if at least one label was added)
+    if any([xs_controlled is not None, ys_controlled_edited is not None]):
+        ax.legend(loc="upper right")
+
+    # Ensure white background
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    return fig, xs, ys
+
+
 def render_fig(
     xs,
     ys,
@@ -168,9 +238,13 @@ if __name__ == "__main__":
             unconditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -204,9 +278,13 @@ if __name__ == "__main__":
             flow_model_regression=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.01,
-                    nu=1.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.01,
+                        nu=1.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -240,9 +318,13 @@ if __name__ == "__main__":
             conditional_flow_model=dict(
                 device=device,
                 gaussian_process=dict(
-                    length_scale=0.03,
-                    nu=2.5,
-                    dims=[257],
+                    type="matern",
+                    args=dict(
+                        device=device,
+                        length_scale=0.03,
+                        nu=2.5,
+                        dims=[257],
+                    ),
                 ),
                 solver=dict(
                     type="ODESolver",
@@ -348,7 +430,12 @@ if __name__ == "__main__":
 
         ys = airfoil_generated.squeeze().cpu().numpy()
 
-        fig, xs, ys = render_fig(
+        # fig, xs, ys = render_fig(
+        #     xs=xs,
+        #     ys=ys,
+        # )
+
+        fig, xs, ys = render_fig_matplotlib(
             xs=xs,
             ys=ys,
         )
@@ -492,7 +579,15 @@ if __name__ == "__main__":
 
             ys = airfoil_for_editing_sampled.squeeze().cpu().numpy()
 
-            fig, xs, ys = render_fig(
+            # fig, xs, ys = render_fig(
+            #     xs=xs,
+            #     ys=ys,
+            #     xs_controlled=xs_controlled,
+            #     ys_controlled=ys_controlled,
+            #     ys_controlled_edited=ys_controlled_edited,
+            # )
+
+            fig, xs, ys = render_fig_matplotlib(
                 xs=xs,
                 ys=ys,
                 xs_controlled=xs_controlled,
@@ -636,7 +731,15 @@ if __name__ == "__main__":
         ys_controlled_edited = ys_delta[points_id_constraints_for_editing_all]
 
         # Render figure
-        fig, xs, ys = render_fig(
+        # fig, xs, ys = render_fig(
+        #     xs=xs,
+        #     ys=ys,
+        #     xs_controlled=xs_controlled,
+        #     ys_controlled=ys_controlled,
+        #     ys_controlled_edited=ys_controlled_edited,
+        # )
+
+        fig, xs, ys = render_fig_matplotlib(
             xs=xs,
             ys=ys,
             xs_controlled=xs_controlled,
@@ -670,7 +773,7 @@ if __name__ == "__main__":
         resolution, seed, prior_x, select_last_prior
     )
 
-    # plot_1.show()
+    plot_1.show()
 
     # so we generate a random airfoil curve
     print("airfoil output :", airfoil_for_editing.shape)
@@ -678,8 +781,9 @@ if __name__ == "__main__":
 
     # We then set the constraints for the airfoil curve, suppose we set the constraints as:
     random_scale = 0.000003
-    random_points_number = 5
-    control_points_range = '[{"x_min": -0.1, "x_max": 0.2, "y_min": -0.5, "y_max": 0.5, "delta": 0.000003}, {"x_min": 0.3, "x_max": 0.5, "y_min": -0.5, "y_max": 0.0, "delta": 0.000003}]'
+    random_points_number = 0
+    # control_points_range = '[{"x_min": -0.1, "x_max": 0.2, "y_min": -0.5, "y_max": 0.5, "delta": 0.000003}, {"x_min": 0.3, "x_max": 0.5, "y_min": -0.5, "y_max": 0.0, "delta": 0.000003}]'
+    control_points_range = '[{"x_min": -0.1, "x_max": 0.2, "y_min": -0.5, "y_max": 0.5, "delta": 0.0}, {"x_min": 0.6, "x_max": 0.7, "y_min": -0.5, "y_max": 0.0, "delta": -0.003}]'
 
     (
         plot_2,
@@ -696,7 +800,7 @@ if __name__ == "__main__":
         airfoil_for_editing,
     )
 
-    # plot_2.show()
+    plot_2.show()
     print(
         "points_id_constraints_for_editing_all output :",
         points_id_constraints_for_editing_all,
@@ -722,6 +826,6 @@ if __name__ == "__main__":
         latent_initialization,
     )
 
-    # plot_3.show()
+    plot_3.show()
     print("Editing airfoil curve generated successfully.")
     print("airfoil_after_editing output :", airfoil_after_editing.shape)

@@ -183,12 +183,20 @@ def generate_airfoil_curve(
             dims=[resolution], n_samples=1, n_channels=1
         )
 
+    import time
+
+    time_1 = time.time()
+    # sync GPU time
+    torch.cuda.synchronize()
     sample_trajectory_x = unconditional_flow_model.sample_process(
         n_dims=[resolution],
         n_channels=1,
-        t_span=torch.linspace(0.0, 1.0, 1000),
+        t_span=torch.linspace(0.0, 1.0, 10),
         x_0=prior_x,
     )
+    # sync GPU time
+    torch.cuda.synchronize()
+    print("Sample process time: ", time.time() - time_1)
 
     airfoil_generated_normed = sample_trajectory_x[-1, 0, 0, :]
 

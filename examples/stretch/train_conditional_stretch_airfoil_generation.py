@@ -5,6 +5,7 @@ import torch.multiprocessing as mp
 
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
@@ -199,7 +200,7 @@ def main(args):
                         else (
                             (
                                 args.epoch * 200000 // 1024
-                                if args.dataset_names != ['interpolated_uiuc']
+                                if args.dataset_names != ["interpolated_uiuc"]
                                 else args.epoch * 2048 // 1024
                             )
                             if args.epoch is not None and args.dataset == "af200k"
@@ -208,7 +209,7 @@ def main(args):
                                 if args.dataset == "supercritical"
                                 else (
                                     200000 // 1024 * 2000
-                                    if args.dataset_names != ['interpolated_uiuc']
+                                    if args.dataset_names != ["interpolated_uiuc"]
                                     else 2048 // 1024 * 2000
                                 )
                             )
@@ -222,7 +223,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // 1024 * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // 1024 * 500
                     )
                 ),
@@ -231,7 +232,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // 1024 * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // 1024 * 500
                     )
                 ),
@@ -298,6 +299,7 @@ def main(args):
 
     # save train_dataset_min and train_dataset_max using safetensors
     from safetensors.torch import save_file
+
     # Create a dictionary
     tensors_to_save = {
         "train_dataset_min": train_dataset.min,
@@ -324,8 +326,8 @@ def main(args):
     }
     torch.save(stats, f"output/{project_name}/mean_std.pt")
     # load train_dataset_min and train_dataset_max using safetensors
-    stats = torch.load('mean_std.pt')
-    train_dataset_mean, train_dataset_std = stats['mean'], stats['std']
+    stats = torch.load("mean_std.pt")
+    train_dataset_mean, train_dataset_std = stats["mean"], stats["std"]
 
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()
@@ -429,15 +431,28 @@ def main(args):
                     n_channels=1,
                     t_span=torch.linspace(0.0, 1.0, 1000),
                     batch_size=1,
-                    condition=y.repeat(3*3, 1),
+                    condition=y.repeat(3 * 3, 1),
                 )
                 # sample_trajectory is of shape (T, B, C, D)
                 data_list = [
-                    torch.cat([x.squeeze()[:,:65].cpu(),
-                               ((data["apart"].squeeze() - train_dataset.min.to(device)) / (
-                                    train_dataset.max.to(device) - train_dataset.min.to(device)
-                                ) * 2 - 1)[:, 1].cpu().repeat(3*3, 1),
-                               x.squeeze()[:,65:].cpu()], dim=1).numpy()
+                    torch.cat(
+                        [
+                            x.squeeze()[:, :65].cpu(),
+                            (
+                                (data["apart"].squeeze() - train_dataset.min.to(device))
+                                / (
+                                    train_dataset.max.to(device)
+                                    - train_dataset.min.to(device)
+                                )
+                                * 2
+                                - 1
+                            )[:, 1]
+                            .cpu()
+                            .repeat(3 * 3, 1),
+                            x.squeeze()[:, 65:].cpu(),
+                        ],
+                        dim=1,
+                    ).numpy()
                     for x in torch.split(
                         sample_trajectory, split_size_or_sections=1, dim=0
                     )

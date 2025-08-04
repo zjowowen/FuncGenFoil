@@ -762,7 +762,9 @@ def main(args):
 
             label_error_i = np.mean(arr)
             mean_label_error_list.append(label_error_i)
-            label_error_filtered_i = cal_mean(arr, remove_max_percent=args.remove_max_percent)
+            label_error_filtered_i = cal_mean(
+                arr, remove_max_percent=args.remove_max_percent
+            )
             mean_label_error_filtered_list.append(label_error_filtered_i)
 
             print(f"label error {index}: {label_error_i}")
@@ -774,16 +776,18 @@ def main(args):
             max_index = np.argsort(arr)[-9:]
             print(f"label error {index} max: {arr[max_index]}, index: {max_index}")
 
-
         # compute arithmetic mean of label error
         arithmetic_mean_error = np.mean(mean_label_error_list)
         print(f"label error (arithmetic mean) : {arithmetic_mean_error}")
         log_msg[f"label error (arithmetic mean) {i}"] = arithmetic_mean_error
 
         arithmetic_mean_error_filtered = np.mean(mean_label_error_filtered_list)
-        print(f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}")
-        log_msg[f"label error (arithmetic mean) {i} Filtered"] = arithmetic_mean_error_filtered
-
+        print(
+            f"label error (arithmetic mean) Filtered: {arithmetic_mean_error_filtered}"
+        )
+        log_msg[f"label error (arithmetic mean) {i} Filtered"] = (
+            arithmetic_mean_error_filtered
+        )
 
         # compute geometric mean of label error
         geometric_mean_error = np.abs(np.prod(mean_label_error_list)) ** (
@@ -792,16 +796,18 @@ def main(args):
         print(f"label error (geometric mean) : {geometric_mean_error}")
         log_msg[f"label error (geometric mean) {i}"] = geometric_mean_error
 
-        geometric_mean_error_filtered = np.abs(np.prod(mean_label_error_filtered_list)) ** (
-            1 / label_error.shape[2]
-        )
+        geometric_mean_error_filtered = np.abs(
+            np.prod(mean_label_error_filtered_list)
+        ) ** (1 / label_error.shape[2])
         print(f"label error (geometric mean) Filtered: {geometric_mean_error_filtered}")
-        log_msg[f"label error (geometric mean) {i} Filtered"] = geometric_mean_error_filtered
+        log_msg[f"label error (geometric mean) {i} Filtered"] = (
+            geometric_mean_error_filtered
+        )
 
         print(f"mean smoothness: {np.mean(smoothness[:,i])}")
         print(f"mean diversity: {np.mean(diversity[:,i])}")
 
-        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:,i])
+        log_msg[f"mean smoothness {i}"] = np.mean(smoothness[:, i])
         log_msg[f"mean diversity {i}"] = np.mean(diversity[:, i])
 
     if args.wandb:
@@ -909,7 +915,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Whether to render the video",
     )
-
 
     argparser.add_argument(
         "--t_span",

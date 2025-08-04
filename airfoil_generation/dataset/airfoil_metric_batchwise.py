@@ -97,7 +97,7 @@ def torch_factorial(x):
     return torch.exp(torch.lgamma(x + 1))
 
 
-def calculate_airfoil_metric_n15_batch(x, y, stacked:bool = False):
+def calculate_airfoil_metric_n15_batch(x, y, stacked: bool = False):
     """
     Batch version of calculate_airfoil_metric_n15.
 

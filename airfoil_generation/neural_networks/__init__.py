@@ -4,6 +4,7 @@ from airfoil_generation.neural_networks.neural_operator import (
     FourierNeuralOperator,
     FourierNeuralOperatorDeterministic,
     FourierNeuralOperatorBasedValueFunction,
+    AsyncTemporalFourierNeuralOperator,
 )
 from airfoil_generation.neural_networks.point_cloud_neural_operator import (
     PointCloudNeuralOperator,
@@ -36,4 +37,5 @@ MODULES = {
     "FourierNeuralOperatorDeterministic".lower(): FourierNeuralOperatorDeterministic,
     "FourierNeuralOperatorBasedValueFunction".lower(): FourierNeuralOperatorBasedValueFunction,
     "PointCloudNeuralOperator".lower(): PointCloudNeuralOperator,
+    "AsyncTemporalFourierNeuralOperator".lower(): AsyncTemporalFourierNeuralOperator,
 }

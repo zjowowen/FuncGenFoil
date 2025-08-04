@@ -166,6 +166,98 @@ class FourierNeuralOperator(nn.Module):
         return out
 
 
+class AsyncTemporalFourierNeuralOperator(nn.Module):
+    """
+    Overview:
+        Fourier Neural Operator model for asynchronous temporal data.
+    Interfaces:
+        ``__init__``, ``forward``
+    """
+
+    def __init__(
+        self,
+        modes: int,
+        vis_channels: int,
+        hidden_channels: int,
+        proj_channels: int,
+        x_dim: int = 1,
+        t_scaling: float = 1,
+        n_layers: int = 4,
+        n_conditions: int = 0,
+    ):
+        """
+        Overview:
+            Initialize the model.
+        Arguments:
+            - modes (int): number of Fourier modes
+            - vis_channels (int): number of visual channels
+            - hidden_channels (int): number of hidden channels
+            - proj_channels (int): number of projection channels
+            - x_dim (int): number of dimensions of the input grid
+            - t_scaling (float): scaling factor for the time
+        """
+        super().__init__()
+
+        self.t_scaling = t_scaling
+        n_modes = (modes,) * x_dim  # Same number of modes in each x dimension
+        in_channels = (
+            vis_channels + x_dim + 1 + n_conditions
+        )  # visual channels + spatial embedding + time embedding
+
+        self.model = FNO(
+            n_modes=n_modes,
+            hidden_channels=hidden_channels,
+            projection_channels=proj_channels,
+            in_channels=in_channels,
+            out_channels=vis_channels,
+            n_layers=n_layers,
+        )
+
+    def forward(self, t, x, condition=None):
+        """
+        Overview:
+            Forward pass of the model. The time tensor `t` has same shape as `x`.
+        Arguments:
+            - t (torch.Tensor): time tensor
+            - x (torch.Tensor): input tensor
+            - condition (torch.Tensor): condition tensor
+        Returns:
+            - out (torch.Tensor): output tensor
+        """
+        u = x
+        # u: (batch_size, channels, h, w)
+        # t: either scalar or (batch_size,)
+
+        t = t / self.t_scaling
+        # print("t in the model:{}".format(t))
+        batch_size = u.shape[0]
+        dims = u.shape[2:]
+
+        # if t.dim() == 0 or t.numel() == 1:
+        #     t = torch.ones(u.shape[0], device=t.device) * t
+
+        # assert t.dim() == 1
+        # assert t.shape[0] == u.shape[0]
+
+        # Concatenate time as a new channel
+        # t = t_allhot(t, u.shape)
+        # print('t max:{}, t min:{}'.format(t.max(), t.min()))
+        # Concatenate position as new channel(s)
+        posn_emb = make_posn_embed(batch_size, dims).to(u.device)
+        if condition is not None:
+            condition = condition.unsqueeze(2).expand(
+                -1, -1, u.shape[2]
+            )  # 扩展成 (B, 11, 257)
+            u = torch.cat((u, posn_emb, t, condition), dim=1).float()
+        else:
+            u = torch.cat((u, posn_emb, t), dim=1).float()  # todo fix precision
+
+        out = self.model(u)
+
+        return out
+
+
+
 # Assume LearnableMeanFieldFromGP class is defined above or imported
 # (Using the version from the previous corrected response)
 class LearnableMeanFieldFromGP(gpytorch.models.ApproximateGP):

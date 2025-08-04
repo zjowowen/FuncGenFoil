@@ -1,60 +1,58 @@
 from setuptools import setup, find_packages
 
-with open('README.md', 'r', encoding="utf-8") as f:
+with open("README.md", "r", encoding="utf-8") as f:
     readme = f.read()
 
 setup(
-    name='FuncGenFoil',
-    version='0.0.1',
-    description='Airfoil Generation in Function Space.',
+    name="FuncGenFoil",
+    version="0.0.1",
+    description="Airfoil Generation in Function Space.",
     long_description=readme,
-    long_description_content_type='text/markdown',
-    author='zjowowen',
+    long_description_content_type="text/markdown",
+    author="zjowowen",
     author_email="zjowowen@gmail.com",
-
-    packages=find_packages(
-        exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
+    packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests"]),
     install_requires=[
-        'h5py',
-        'timm',
-        'gpytorch',
-        'neuraloperator',
-        'numpy<=1.26.4',
-        'torch>=2.2.0',
-        'opencv-python',
-        'tensordict',
-        'torchrl',
-        'di-treetensor',
-        'matplotlib',
-        'wandb',
-        'rich',
-        'easydict',
-        'tqdm',
-        'torchdyn',
-        'torchsde',
-        'scipy',
-        'POT',
-        'beartype',
-        'diffusers',
-        'av',
-        'moviepy',
-        'imageio[ffmpeg]',
+        "h5py",
+        "timm",
+        "gpytorch",
+        "neuraloperator",
+        "numpy<=1.26.4",
+        "torch>=2.2.0",
+        "opencv-python",
+        "tensordict",
+        "torchrl",
+        "di-treetensor",
+        "matplotlib",
+        "wandb",
+        "rich",
+        "easydict",
+        "tqdm",
+        "torchdyn",
+        "torchsde",
+        "scipy",
+        "POT",
+        "beartype",
+        "diffusers",
+        "av",
+        "moviepy",
+        "imageio[ffmpeg]",
     ],
     dependency_links=[
-        'git+https://github.com/zjowowen/GenerativeRL_Preview.git#egg=GenerativeRL',
-        'git+https://github.com/rtqichen/torchdiffeq.git#egg=torchdiffeq',
+        "git+https://github.com/zjowowen/GenerativeRL_Preview.git#egg=GenerativeRL",
+        "git+https://github.com/rtqichen/torchdiffeq.git#egg=torchdiffeq",
     ],
     extras_require={
-        'accelerator': [
-            'accelerator',
+        "accelerator": [
+            "accelerator",
         ],
-        'HuggingFace': [
-            'safetensors',
-            'huggingface_hub',
+        "HuggingFace": [
+            "safetensors",
+            "huggingface_hub",
         ],
-        'formatter': [
-            'black',
-            'isort',
+        "formatter": [
+            "black",
+            "isort",
         ],
     },
     classifiers=[

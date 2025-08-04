@@ -1,3 +1,6 @@
+import datetime
+import argparse
+
 import os
 import torch.multiprocessing as mp
 
@@ -23,14 +26,11 @@ from easydict import EasyDict
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
 from airfoil_generation.dataset import Dataset, AF200KDataset
 
-from airfoil_generation.model.optimal_transport_functional_flow_model import (
-    OptimalTransportFunctionalFlow,
+from airfoil_generation.model.functional_diffusion import (
+    FunctionalDiffusion,
 )
 from airfoil_generation.training.optimizer import CosineAnnealingWarmupLR
-
-from airfoil_generation.neural_networks.point_cloud_neural_operator import (
-    compute_Fourier_modes,
-)
+from airfoil_generation.dataset.airfoil_metric import calculate_airfoil_metric_n15
 
 
 def render_video_3x3_polish(
@@ -126,7 +126,7 @@ def render_video_3x3(
     dpi=100,
 ):
     if not os.path.exists(video_save_path):
-        os.makedirs(video_save_path, exist_ok=True)
+        os.makedirs(video_save_path)
 
     xs = (np.cos(np.linspace(0, 2 * np.pi, 257)) + 1) / 2
 
@@ -193,17 +193,11 @@ def main(args):
 
     print(f"Process rank: {process_rank}")
 
-    ndims = 1
-    kx_max = args.modes
-    Lx = 1.0
-    modes = compute_Fourier_modes(ndims, [kx_max], [Lx])
-    modes = torch.tensor(modes, dtype=torch.float).to(device)
-
     project_name = args.project_name
     config = EasyDict(
         dict(
             device=device,
-            flow_model=dict(
+            diffusion_model=dict(
                 device=device,
                 gaussian_process=dict(
                     type=args.kernel_type,
@@ -232,35 +226,45 @@ def main(args):
                         library="torchdiffeq",
                     ),
                 ),
-                path=dict(
-                    sigma=1e-4,
-                    device=device,
-                ),
+                path=dict(type="gvp"),
+                reverse_path=dict(type="gvp"),
                 model=dict(
                     type="velocity_function",
                     args=dict(
                         backbone=dict(
-                            type="PointCloudNeuralOperator",
+                            type="FourierNeuralOperator",
                             args=dict(
-                                ndims=ndims,
-                                modes=modes,
-                                nmeasures=1,
-                                layers=[256, 256, 256, 256, 256, 256],
-                                fc_dim=128,
-                                in_dim=4 + args.num_constraints,
-                                out_dim=1,
-                                train_sp_L="independently",
-                                act="gelu",
-                                activate_differential_operator=not args.deactivate_differential_operator,
+                                modes=args.modes,
+                                vis_channels=1,
+                                hidden_channels=256,
+                                proj_channels=128,
+                                x_dim=1,
+                                t_scaling=1,
+                                n_layers=6,
                             ),
+                        ),
+                    ),
+                ),
+                energy_guidance=dict(
+                    backbone=dict(
+                        type="FourierNeuralOperatorBasedValueFunction",
+                        args=dict(
+                            modes=args.modes,
+                            vis_channels=1,
+                            hidden_channels=256,
+                            proj_channels=128,
+                            spatial_shape=(257,),
+                            x_dim=1,
+                            t_scaling=1,
+                            n_layers=6,
+                            n_conditions=args.num_constraints,
                         ),
                     ),
                 ),
             ),
             parameter=dict(
-                equal_weights=args.equal_weights,
                 train_samples=20000 if args.dataset == "supercritical" else 200000,
-                batch_size=1024,
+                batch_size=30,
                 learning_rate=5e-5 * accelerator.num_processes,
                 iterations=(
                     args.iterations
@@ -269,53 +273,37 @@ def main(args):
                         args.epoch * 20000 // 1024
                         if args.epoch is not None and args.dataset == "supercritical"
                         else (
-                            (
-                                args.epoch * 200000 // 1024
-                                if args.dataset_names != ["interpolated_uiuc"]
-                                else args.epoch * 2048 // 1024
-                            )
+                            args.epoch * 200000 // 1024
                             if args.epoch is not None and args.dataset == "af200k"
                             else (
                                 20000 // 1024 * 2000
                                 if args.dataset == "supercritical"
-                                else (
-                                    200000 // 1024 * 2000
-                                    if args.dataset_names != ["interpolated_uiuc"]
-                                    else 2048 // 1024 * 2000
-                                )
+                                else 200000 // 1024 * 2000
                             )
                         )
                     )
                 ),
-                warmup_steps=2000,
+                warmup_steps=2000 if args.dataset == "supercritical" else 20000,
                 log_rate=100,
                 eval_rate=(
                     20000 // 1024 * 500
                     if args.dataset == "supercritical"
-                    else (
-                        200000 // 1024 * 500
-                        if args.dataset_names != ["interpolated_uiuc"]
-                        else 2048 // 1024 * 500
-                    )
+                    else 200000 // 1024 * 500
                 ),
                 checkpoint_rate=(
                     20000 // 1024 * 500
                     if args.dataset == "supercritical"
-                    else (
-                        200000 // 1024 * 500
-                        if args.dataset_names != ["interpolated_uiuc"]
-                        else 2048 // 1024 * 500
-                    )
+                    else 200000 // 1024 * 500
                 ),
                 video_save_path=f"output/{project_name}/videos",
                 model_save_path=f"output/{project_name}/models",
-                model_load_path=None,
+                model_load_path=args.model_path,
             ),
         )
     )
 
-    flow_model = OptimalTransportFunctionalFlow(
-        config=config.flow_model,
+    diffusion_model = FunctionalDiffusion(
+        config=config.diffusion_model,
     )
 
     if config.parameter.model_load_path is not None and os.path.exists(
@@ -341,11 +329,30 @@ def main(args):
                 new_key = key
             new_state_dict[new_key] = value
 
-        flow_model.model.load_state_dict(new_state_dict)
+        diffusion_model.model.load_state_dict(new_state_dict)
+
+        new_state_dict_2 = {}
+        state_dict_2 = diffusion_model.model.model.backbone.state_dict()
+        state_dict_2.pop("_metadata", None)
+        for key, value in state_dict_2.items():
+            if key.startswith(prefix):
+                # Remove the prefix from the key
+                new_key = key[len(prefix) :]
+            else:
+                new_key = key
+            new_state_dict_2[new_key] = value
+
+        # diffusion_model.energy_guidance.model.model.backbone.model.load_state_dict(new_state_dict_2)
+
         print(f"Load model from {config.parameter.model_load_path} successfully!")
 
     optimizer = torch.optim.Adam(
-        flow_model.model.parameters(), lr=config.parameter.learning_rate
+        diffusion_model.model.parameters(), lr=config.parameter.learning_rate
+    )
+
+    energy_guidance_optimizer = torch.optim.Adam(
+        diffusion_model.energy_guidance.model.parameters(),
+        lr=config.parameter.learning_rate,
     )
 
     scheduler = CosineAnnealingWarmupLR(
@@ -355,7 +362,24 @@ def main(args):
         warmup_steps=config.parameter.warmup_steps,
     )
 
-    flow_model.model, optimizer = accelerator.prepare(flow_model.model, optimizer)
+    energy_guidance_scheduler = CosineAnnealingWarmupLR(
+        energy_guidance_optimizer,
+        T_max=config.parameter.iterations,
+        eta_min=2e-6,
+        warmup_steps=config.parameter.warmup_steps,
+    )
+
+    (
+        diffusion_model.model,
+        diffusion_model.energy_guidance.model,
+        optimizer,
+        energy_guidance_optimizer,
+    ) = accelerator.prepare(
+        diffusion_model.model,
+        diffusion_model.energy_guidance.model,
+        optimizer,
+        energy_guidance_optimizer,
+    )
 
     os.makedirs(config.parameter.model_save_path, exist_ok=True)
 
@@ -394,40 +418,6 @@ def main(args):
         )
     )
 
-    test_dataset = (
-        Dataset(
-            split="test",
-            std_cst_augmentation=0.08,
-            num_perturbed_airfoils=10,
-            dataset_names=["supercritical_airfoil", "data_4000", "r05", "r06"],
-            max_size=100000,
-            folder_path=args.data_path,
-            num_constraints=args.num_constraints,
-        )
-        if args.dataset == "supercritical"
-        else (
-            AF200KDataset(
-                split="test",
-                dataset_names=(
-                    [
-                        "beziergan_gen",
-                        "cst_gen",
-                        "cst_gen_a",
-                        "cst_gen_b",
-                        "diffusion_gen",
-                        "interpolated_uiuc",
-                        "naca_gen",
-                        "supercritical_airfoil_af200k",
-                    ]
-                    if len(args.dataset_names) == 0
-                    else args.dataset_names
-                ),
-                folder_path=args.data_path,
-                num_constraints=args.num_constraints,
-            )
-        )
-    )
-
     print(f"Data number: {len(train_dataset)}")
 
     data_matrix = torch.from_numpy(np.array(list(train_dataset.params.values())))
@@ -443,140 +433,15 @@ def main(args):
     # acclerate wait for every process to be ready
     accelerator.wait_for_everyone()
 
-    from airfoil_generation.dataset.point_cloud_data_preprocess import (
-        convert_structured_data_1D,
-        preprocess_data,
-        compute_node_weights,
-        data_preparition_with_tensordict,
-    )
-
-    if args.preprocess_data and accelerator.is_local_main_process:
-
-        def preprocess(dataset, file_name="pcno_data.npz", numpy_data_path="./"):
-            coordx = np.linspace(0, 2 * np.pi, 257)[None, :].repeat(
-                len(dataset), axis=0
-            )  # of shape (b,257)
-            features = (
-                dataset.storage["gt"].cpu().numpy()[:, :, 1:2]
-            )  # of shape (b,257,1)
-
-            nodes_list, elems_list, features_list = convert_structured_data_1D(
-                [
-                    coordx,
-                ],
-                features,
-                nnodes_per_elem=2,
-                feature_include_coords=False,
-            )
-
-            (
-                nnodes,
-                node_mask,
-                nodes,
-                node_measures_raw,
-                features,
-                directed_edges,
-                edge_gradient_weights,
-            ) = preprocess_data(nodes_list, elems_list, features_list)
-            node_measures, node_weights = compute_node_weights(
-                nnodes, node_measures_raw, equal_measure=False
-            )
-            node_equal_measures, node_equal_weights = compute_node_weights(
-                nnodes, node_measures_raw, equal_measure=True
-            )
-            np.savez_compressed(
-                os.path.join(numpy_data_path, file_name),
-                nnodes=nnodes,
-                node_mask=node_mask,
-                nodes=nodes,
-                node_measures_raw=node_measures_raw,
-                node_measures=node_measures,
-                node_weights=node_weights,
-                node_equal_measures=node_equal_measures,
-                node_equal_weights=node_equal_weights,
-                features=features,
-                directed_edges=directed_edges,
-                edge_gradient_weights=edge_gradient_weights,
-            )
-
-        preprocess(
-            train_dataset,
-            file_name="pcno_data_train.npz",
-            numpy_data_path=args.numpy_data_path,
-        )
-        preprocess(
-            test_dataset,
-            file_name="pcno_data_test.npz",
-            numpy_data_path=args.numpy_data_path,
-        )
-        print("Preprocess data done!")
-
-    accelerator.wait_for_everyone()
-
-    def load_data(
-        numpy_data_path, dataset, file_name="pcno_data.npz", equal_weights=True
-    ):
-
-        data = np.load(os.path.join(numpy_data_path, file_name))
-        nnodes, node_mask, nodes = data["nnodes"], data["node_mask"], data["nodes"]
-        node_weights = (
-            data["node_equal_weights"] if equal_weights else data["node_weights"]
-        )
-        node_measures = data["node_measures"]
-        directed_edges, edge_gradient_weights = (
-            data["directed_edges"],
-            data["edge_gradient_weights"],
-        )
-        features = data["features"]
-
-        node_measures_raw = data["node_measures_raw"]
-        indices = np.isfinite(node_measures_raw)
-        node_rhos = np.copy(node_weights)
-        node_rhos[indices] = node_rhos[indices] / node_measures[indices]
-
-        point_cloud_dataset = data_preparition_with_tensordict(
-            nnodes,
-            node_mask,
-            nodes,
-            node_weights,
-            node_rhos,
-            features,
-            directed_edges,
-            edge_gradient_weights,
-            params=dataset.storage["params"],
-        )
-
-        return point_cloud_dataset
-
-    point_cloud_train_dataset = load_data(
-        args.numpy_data_path,
-        dataset=train_dataset,
-        file_name="pcno_data_train.npz",
-        equal_weights=config.parameter.equal_weights,
-    )
-    point_cloud_test_dataset = load_data(
-        args.numpy_data_path,
-        dataset=test_dataset,
-        file_name="pcno_data_test.npz",
-        equal_weights=config.parameter.equal_weights,
-    )
-
     train_replay_buffer = TensorDictReplayBuffer(
-        storage=point_cloud_train_dataset.storage,
+        storage=train_dataset.storage,
         batch_size=batch_size,
         # sampler=RandomSampler(),
         sampler=SamplerWithoutReplacement(drop_last=False, shuffle=True),
         prefetch=10,
     )
 
-    test_replay_buffer = TensorDictReplayBuffer(
-        storage=point_cloud_test_dataset.storage,
-        batch_size=9,
-        sampler=SamplerWithoutReplacement(drop_last=False, shuffle=False),
-        prefetch=10,
-    )
-
-    iteration_per_epoch = len(point_cloud_train_dataset.storage) // batch_size + 1
+    iteration_per_epoch = len(train_dataset.storage) // batch_size + 1
 
     accelerator.init_trackers(project_name, config=config)
     accelerator.print("✨ Start training ...")
@@ -584,43 +449,153 @@ def main(args):
     mp_list = []
 
     for iteration in track(
-        range(1, config.parameter.iterations + 1),
+        range(0, config.parameter.iterations + 1),
         description="Training",
         disable=not accelerator.is_local_main_process,
     ):
-        flow_model.train()
+        diffusion_model.train()
         with accelerator.autocast():
-            with accelerator.accumulate(flow_model.model):
+            with accelerator.accumulate(diffusion_model.model):
                 data = train_replay_buffer.sample()
                 data = data.to(device)
-                gt = (data["y"] - train_dataset.min.to(device)[1]) / (
-                    train_dataset.max.to(device)[1] - train_dataset.min.to(device)[1]
-                ) * 2 - 1  # (b,257,1)
-                data["condition"]["params"] = (
-                    (data["condition"]["params"] - train_dataset_mean[None, :])
-                    / (train_dataset_std[None, :] + 1e-8)
-                ).to(
-                    torch.float32
-                )  # (b,15)
+                data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
+                    train_dataset.max.to(device) - train_dataset.min.to(device)
+                ) * 2 - 1
+
+                gt = data["gt"][:, :, 1:2]  # (b,257,1)
+                y = (
+                    data["params"][:, :] - train_dataset_mean[None, :]
+                ) / train_dataset_std[
+                    None, :
+                ]  # (b,15)
 
                 gt = gt.to(device).to(torch.float32)
+                y = y.to(device).to(torch.float32)
 
-                gt_reshape = gt.reshape(-1, 1, 257)  # (b,1,257)
-                gaussian_prior = flow_model.gaussian_process.sample_from_prior(
-                    dims=config.flow_model.gaussian_process.args.dims,
-                    n_samples=gt_reshape.shape[0],
-                    n_channels=gt_reshape.shape[1],
+                data = gt.reshape(-1, 1, 257)  # (b,1,257)
+
+                # data is of shape [B, 1, 257], repeat data into shape [B, B, 1, 257]
+                data = data.repeat(
+                    config.parameter.batch_size, 1, 1, 1
+                )  # (b, b, 1, 257)
+
+                # resolution = 257
+                # xs = (
+                #     torch.cos(
+                #         torch.linspace(
+                #             0.0,
+                #             2.0 * torch.pi,
+                #             resolution,
+                #             device=y.device,  # keep on same device
+                #             dtype=y.dtype,
+                #         )  # keep same precision
+                #     )
+                #     + 1.0
+                # ) / 2.0
+
+                # def energy_model(x, condition):
+                #     # x is of shape (b, 1, 257)
+
+                #     airfoil_generated_normed = x
+
+                #     airfoil_generated = (airfoil_generated_normed + 1) / 2.0 * (
+                #         train_dataset.max[1] - train_dataset.min[1]
+                #     ) + train_dataset.min[1]
+
+                #     ys = airfoil_generated.squeeze()
+
+                #     airfoil_metric = calculate_airfoil_metric_n15(x=xs, y=ys, n_inner_steps=20000)
+                #     (
+                #         rf_real,
+                #         t4u_real,
+                #         t4l_real,
+                #         xumax_real,
+                #         yumax_real,
+                #         xlmax_real,
+                #         ylmax_real,
+                #         t25u_real,
+                #         t25l_real,
+                #         angle_real,
+                #         te1_real,
+                #         xr_real,
+                #         yr_real,
+                #         t60u_real,
+                #         t60l_real,
+                #     ) = airfoil_metric
+                #     metric = torch.stack(
+                #         (
+                #             rf_real,
+                #             t4u_real,
+                #             t4l_real,
+                #             xumax_real,
+                #             yumax_real,
+                #             xlmax_real,
+                #             ylmax_real,
+                #             t25u_real,
+                #             t25l_real,
+                #             angle_real,
+                #             te1_real,
+                #             xr_real,
+                #             yr_real,
+                #             t60u_real,
+                #             t60l_real,
+                #         ),
+                #         dim=0,
+                #     )
+                #     energy = - (metric - condition).pow(2).sum(dim=0)
+                #     # energy is of shape (b,)
+                #     return energy
+
+                # x = diffusion_model.sample(
+                #     n_dims=config.diffusion_model.gaussian_process.args.dims,
+                #     n_channels=1,
+                #     t_span=torch.linspace(0.0, 1.0, 100),
+                #     batch_size=(config.parameter.batch_size,20),
+                #     with_grad=False,
+                # )
+
+                def energy_model(x, condition):
+                    x = x.reshape(
+                        config.parameter.batch_size, config.parameter.batch_size, 1, 257
+                    )  # (b, b, 1, 257)
+                    condition = condition.reshape(
+                        config.parameter.batch_size, config.parameter.batch_size, 15
+                    )  # (b, b, 15)
+                    condition_0 = condition[:, 0, :]  # (b, 15)
+                    # Unsqueeze to prepare for broadcasting
+                    # tensor1 will have shape [B, 1, 15]
+                    tensor1 = condition_0.unsqueeze(1)
+                    # print("\nShape of tensor1 (condition_0.unsqueeze(1)):", tensor1.shape)
+
+                    # tensor2 will have shape [1, B, 15]
+                    tensor2 = condition_0.unsqueeze(0)
+                    # print("Shape of tensor2 (condition_0.unsqueeze(0)):", tensor2.shape)
+
+                    # Calculate the difference
+                    # Broadcasting will make tensor1 act like [B, B, 15] by repeating along dim 1
+                    # Broadcasting will make tensor2 act like [B, B, 15] by repeating along dim 0
+                    difference_matrix = tensor1 - tensor2
+                    # print("\nShape of difference_matrix:", difference_matrix.shape)
+                    # print("Difference matrix:\n", difference_matrix)
+
+                    # return the energy as the negative squared difference
+                    return -torch.sum(difference_matrix.pow(2), dim=-1).reshape(
+                        config.parameter.batch_size * config.parameter.batch_size, 1
+                    )  # (b*b, 1)
+
+                loss = diffusion_model.energy_guidance_loss(
+                    energy_model=energy_model,
+                    x=data,
+                    condition=y,
                 )
-                loss = flow_model.functional_flow_matching_loss(
-                    x0=gaussian_prior,
-                    x1=gt_reshape,
-                    condition=data["condition"],
-                )
-                optimizer.zero_grad()
+                # optimizer.zero_grad()
+                # accelerator.backward(loss)
+                # optimizer.step()
+                # scheduler.step()
+                energy_guidance_optimizer.zero_grad()
                 accelerator.backward(loss)
-                optimizer.step()
-
-                scheduler.step()
+                energy_guidance_optimizer.step()
+                energy_guidance_scheduler.step()
 
         loss = accelerator.gather(loss)
         if iteration % config.parameter.log_rate == 0:
@@ -649,21 +624,31 @@ def main(args):
             )
 
         if iteration % config.parameter.eval_rate == 0:
-            flow_model.eval()
+            diffusion_model.eval()
             with torch.no_grad():
-                data = test_replay_buffer.sample()
+
+                data = train_replay_buffer.sample()
                 data = data.to(device)
-                data["condition"]["params"] = (
-                    (data["condition"]["params"][:, :] - train_dataset_mean[None, :])
-                    / (train_dataset_std[None, :] + 1e-8)
-                ).to(
-                    torch.float32
-                )  # (b,15)
-                sample_trajectory = flow_model.sample_process(
-                    n_dims=config.flow_model.gaussian_process.args.dims,
+                data["gt"] = (data["gt"] - train_dataset.min.to(device)) / (
+                    train_dataset.max.to(device) - train_dataset.min.to(device)
+                ) * 2 - 1
+
+                gt = data["gt"][:, :, 1:2]  # (b,257,1)
+                y = (
+                    data["params"][:, :] - train_dataset_mean[None, :]
+                ) / train_dataset_std[
+                    None, :
+                ]  # (b,15)
+
+                gt = gt.to(device).to(torch.float32)
+                y = y.to(device).to(torch.float32)
+
+                sample_trajectory = diffusion_model.sample_process_with_energy_guidance(
+                    n_dims=config.diffusion_model.gaussian_process.args.dims,
                     n_channels=1,
                     t_span=torch.linspace(0.0, 1.0, 100),
-                    condition=data["condition"],
+                    # batch_size=9,
+                    condition=y[:9, :],  # (b, 15) -> (1, 15) for 9 samples
                 )
                 # sample_trajectory is of shape (T, B, C, D)
 
@@ -695,8 +680,14 @@ def main(args):
                 if not os.path.exists(config.parameter.model_save_path):
                     os.makedirs(config.parameter.model_save_path)
                 torch.save(
-                    accelerator.unwrap_model(flow_model.model).state_dict(),
+                    accelerator.unwrap_model(diffusion_model.model).state_dict(),
                     f"{config.parameter.model_save_path}/model_{iteration}.pth",
+                )
+                torch.save(
+                    accelerator.unwrap_model(
+                        diffusion_model.energy_guidance.model
+                    ).state_dict(),
+                    f"{config.parameter.model_save_path}/energy_guidance_model_{iteration}.pth",
                 )
 
         accelerator.wait_for_everyone()
@@ -726,11 +717,9 @@ if __name__ == "__main__":
         default=[],
         help="Type of the data to be used, default is all the data in the dataset.",
     )
+    argparser.add_argument("--model_path", "-p", type=str, help="Model load path.")
     argparser.add_argument(
         "--data_path", "-dp", default="data", type=str, help="Dataset path."
-    )
-    argparser.add_argument(
-        "--numpy_data_path", "-ndp", default="./", type=str, help="Numpy Dataset path."
     )
     argparser.add_argument(
         "--num_constraints", "-nc", default=15, type=int, help="Number of constraints."
@@ -743,18 +732,8 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--project_name",
         type=str,
-        default="airfoil-conditional-training-with-PCNO",
+        default="airfoil-unconditional-training-with-energy-guidance",
         help="Project name",
-    )
-    argparser.add_argument(
-        "--preprocess_data",
-        action="store_true",
-        help="Whether to preprocess data",
-    )
-    argparser.add_argument(
-        "--equal_weights",
-        action="store_true",
-        help="Whether to use equal weights for different nodes",
     )
     argparser.add_argument(
         "--iterations",
@@ -770,6 +749,7 @@ if __name__ == "__main__":
         type=int,
         help="Number of training epochs.",
     )
+
     argparser.add_argument(
         "--length_scale",
         "-l",
@@ -804,12 +784,6 @@ if __name__ == "__main__":
         default=64,
         type=int,
         help="Number of modes in Fourier Neural Operator",
-    )
-
-    argparser.add_argument(
-        "--deactivate_differential_operator",
-        action="store_true",
-        help="Whether to activate differential operator",
     )
 
     args = argparser.parse_args()

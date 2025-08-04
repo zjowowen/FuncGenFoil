@@ -271,7 +271,7 @@ def main(args):
                         else (
                             (
                                 args.epoch * 200000 // 1024
-                                if args.dataset_names != ['interpolated_uiuc']
+                                if args.dataset_names != ["interpolated_uiuc"]
                                 else args.epoch * 2048 // 1024
                             )
                             if args.epoch is not None and args.dataset == "af200k"
@@ -280,7 +280,7 @@ def main(args):
                                 if args.dataset == "supercritical"
                                 else (
                                     200000 // 1024 * 2000
-                                    if args.dataset_names != ['interpolated_uiuc']
+                                    if args.dataset_names != ["interpolated_uiuc"]
                                     else 2048 // 1024 * 2000
                                 )
                             )
@@ -294,7 +294,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // 1024 * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // 1024 * 500
                     )
                 ),
@@ -303,7 +303,7 @@ def main(args):
                     if args.dataset == "supercritical"
                     else (
                         200000 // 1024 * 500
-                        if args.dataset_names != ['interpolated_uiuc']
+                        if args.dataset_names != ["interpolated_uiuc"]
                         else 2048 // 1024 * 500
                     )
                 ),
@@ -577,12 +577,12 @@ def main(args):
                 ]
 
                 if accelerator.is_local_main_process:
-                    # render_video_3x3(data_list, "output", iteration)
+                    # render_video_3x3(data_list, config.parameter.video_save_path, iteration)
                     p = mp.Process(
                         target=render_video_3x3_polish,
                         args=(
                             data_list,
-                            "output",
+                            config.parameter.video_save_path,
                             iteration,
                             train_dataset.max.cpu().numpy(),
                             train_dataset.min.cpu().numpy(),

@@ -18,7 +18,7 @@ from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
 
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.state import AcceleratorState
-from accelerate.utils import set_seed
+from accelerate.utils import set_seed, ProjectConfiguration
 
 from rich.progress import track
 from easydict import EasyDict
@@ -179,8 +179,14 @@ def render_video_3x3(
 def main(args):
 
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+
+    accelerator_config = ProjectConfiguration(
+        project_dir=f"output/{args.project_name}",
+        logging_dir="logs",
+    )
+
     accelerator = Accelerator(
-        log_with="wandb" if args.wandb else None, kwargs_handlers=[ddp_kwargs]
+        log_with="tensorboard" if args.wandb else None, kwargs_handlers=[ddp_kwargs], project_config=accelerator_config
     )
     device = accelerator.device
     state = AcceleratorState()

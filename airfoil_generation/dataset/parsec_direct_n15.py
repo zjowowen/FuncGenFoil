@@ -102,6 +102,44 @@ class CSTLayer:
         al = lstsq(A0, yl - self.x_coords * yl[-1], rcond=None)[0]
         return al, te
 
+    def get_coords(self, au, al, te):
+        """
+        Calculates the airfoil y-coordinates for a given set of CST coefficients.
+        This function is the inverse of the fitting process.
+
+        Args:
+            au (np.ndarray): Coefficients for the upper surface.
+            al (np.ndarray): Coefficients for the lower surface.
+            te (float): Half the trailing edge thickness, as returned by fit_CST.
+
+        Returns:
+            np.ndarray: The y-coordinates of the airfoil, in the same format
+                        as the input for fit_CST (upper TE -> LE -> lower TE).
+        """
+        # --- Explanation of the Logic ---
+        # The CST equation for a surface is: y(x) = Shape(x) + x * y_te
+        # where Shape(x) is calculated from the CST coefficients (A0.dot(coeffs))
+        # and y_te is the y-position of the trailing edge at x=1.
+        #
+        # The `fit_CST` function returns `te = (y_upper_te - y_lower_te) / 2`.
+        # To reconstruct the coordinates from `te` alone, we must assume how the
+        # trailing edge is positioned. The standard assumption is that it is
+        # centered around the x-axis.
+        y_upper_te = te
+        y_lower_te = -te
+
+        # Reconstruct the upper and lower surfaces using the CST equation.
+        yu = self.A0.dot(au) + self.x_coords * y_upper_te
+        yl = self.A0.dot(al) + self.x_coords * y_lower_te
+
+        # Combine the surfaces into the standard airfoil format.
+        # The upper surface is reversed to go from TE (x=1) to LE (x=0).
+        # The lower surface goes from LE (x=0) to TE (x=1).
+        # We drop the first point of the lower surface to avoid duplicating the
+        # leading edge point (x=0, y=0).
+        y_coords = np.concatenate((yu[::-1], yl[1:]))
+
+        return y_coords
 
 class Fit_airfoil_15:
     """
@@ -112,11 +150,11 @@ class Fit_airfoil_15:
         __init__, get_parsec_n15, objective
     """
 
-    def __init__(self, data):
+    def __init__(self, data, resolution=257):
         self.data = data
-        self.parsec_features = self.get_parsec_n15()
+        self.parsec_features = self.get_parsec_n15(resolution=resolution)
 
-    def get_parsec_n15(self):
+    def get_parsec_n15(self, resolution=257):
         """
         Overview:
             Get parsec features from airfoil data.
@@ -149,8 +187,8 @@ class Fit_airfoil_15:
         theta_degrees = math.degrees(theta_radians)
         angle = theta_degrees
 
-        cst = CSTLayer(n_cst=12, x_coords=x[:129][::-1])
-        au, al, te = cst.fit_CST(y, n_x=129)
+        cst = CSTLayer(n_cst=12, x_coords=x[:(resolution//2+1)][::-1])
+        au, al, te = cst.fit_CST(y, n_x=resolution//2+1)
         x2 = np.arange(0, 1.001, 0.0001)
         cst2 = CSTLayer(n_cst=12, x_coords=x2)
         yu = cst2.A0.dot(au) + cst2.x_coords * te
@@ -170,7 +208,7 @@ class Fit_airfoil_15:
         yr = yl.max()
         xr = x2[np.argmax(yl)]
 
-        points = data[126:131, :]
+        points = data[(resolution//2-2):(resolution//2+3), :]
         xdata = points[:, 0]
         ydata = points[:, 1]
         initial_guess = (0.0025, 0, np.std([xdata, ydata]))

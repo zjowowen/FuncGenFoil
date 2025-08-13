@@ -1029,10 +1029,31 @@ class AsyncTemporalOptimalTransportFunctionalFlow(nn.Module):
             dims=[x0.shape[2]],
             n_samples=batch_size,
             n_channels=1,
-        )
+        ) * 0.5 + 0.5
+        t_random_origin = t_random.clone()
 
         # clip t_random to [0, 1]
         t_random = torch.clamp(t_random, 0.0, 1.0).squeeze(-1).to(self.device) * self.stochastic_process.t_max
+
+        # generate a random ratio from 0 to 1
+        shrink_ratio_random = torch.rand(batch_size, 1, 1, device=self.device)
+
+        t_random = 1 - (1 - shrink_ratio_random) * (1 - t_random)
+
+        # plot t_random and t_random_origin, which is of shape (batch_size, 1, 257), plot the first item, which is of shape (257,)
+        if True:
+            import matplotlib.pyplot as plt
+
+            plt.figure(figsize=(10, 5))
+            for i in range(batch_size):
+                plt.plot(t_random_origin[i,0].cpu().numpy(), label="t_random_origin")
+                plt.plot(t_random[i,0].cpu().numpy(), label="t_random")
+            plt.xlabel("Time")
+            plt.ylabel("Value")
+            plt.title("t_random and t_random_origin")
+            plt.legend()
+            plt.grid()
+            plt.show()
 
         x_t = self.stochastic_process.direct_sample(t_random, x0, x1)
 

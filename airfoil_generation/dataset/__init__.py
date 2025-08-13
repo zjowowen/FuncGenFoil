@@ -5,6 +5,7 @@ from typing import List, Dict
 import h5py
 import numpy as np
 import torch
+import tqdm
 
 from tensordict import TensorDict
 from torchrl.data import LazyTensorStorage, LazyMemmapStorage
@@ -40,6 +41,7 @@ class Dataset(torch.utils.data.Dataset):
         folder_path="data",
     ):
         for dataset_name in dataset_names:
+            print(f"Loading dataset: {dataset_name}")
             with open(
                 os.path.join(
                     folder_path,
@@ -61,11 +63,12 @@ class Dataset(torch.utils.data.Dataset):
             ) as f:
                 temp_key_list = [line.strip() for line in f.readlines()]
 
+            print(f"Loading {len(temp_key_list)} keys from {dataset_name}")
             with h5py.File(
                 os.path.join(folder_path, dataset_name, f"{dataset_name}_airfoils.h5"),
                 "r",
             ) as f:
-                for key in temp_key_list:
+                for key in tqdm.tqdm(temp_key_list):
                     temp_data = torch.from_numpy(f[key][:])
                     params = torch.from_numpy(self.params[key])
                     temp_aug_data = torch.concat(
